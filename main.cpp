@@ -8,7 +8,7 @@ void parseIdxFile(const std::string &filepath) {
     if (!file.is_open()) {
         std::cerr << "Error while opening the file";
         std::exit(EXIT_FAILURE);
-    }
+    }   
 }
 
 int main() {
