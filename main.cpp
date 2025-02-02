@@ -6,6 +6,7 @@
 #include <format>
 #include <sstream>
 #include <cassert>
+#include <cmath>
 
 class Value {
     std::vector<Value> parents;
@@ -56,6 +57,19 @@ void printFirstBytes(int size, const std::vector<char> buffer) {
     std::cout << "\n";
 }
 
+float sigmoid(float z) {
+    return 1 / (1 + std::exp(-z));
+}
+
+float rootMeanSquared(std::vector<float> truth, std::vector<float> prediction) {
+    assert(truth.size() == prediction.size());
+    float sum = 0;
+    for (int i = 0; i < truth.size(); i++) {
+        sum += std::pow(truth[i] - prediction[i], 2);
+    }
+    return sum / truth.size();
+}
+ 
 int main() {
     std::cout << "Start\n";
     auto buffer = parseIdxFile("input/train-images.idx3-ubyte");
