@@ -7,6 +7,18 @@
 #include <sstream>
 #include <cassert>
 
+class Value {
+    std::vector<Value> parents;
+    float data;
+public:
+    Value(float data, std::vector<Value> parents) : data(data), parents(parents) {}
+    Value(float data): data(data) {}
+
+    friend std::ostream& operator<<(std::ostream &os, const Value v) {
+        return os << "Value(data=" <<  v.data << ")";
+    }
+};
+
 std::vector<char> parseIdxFile(const std::string &filepath) {
     std::ifstream file(filepath, std::ios::binary);
 
