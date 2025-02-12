@@ -1,3 +1,5 @@
+import numpy as np
+
 # IDX file format: https://www.fon.hum.uva.nl/praat/manual/IDX_file_format.html
 
 # format: 
@@ -31,12 +33,18 @@ def printImgToFile(data: bytes):
 
             line += DENSITY_LINE[index]
         
-            if (idx + 1) % dim2 == 0:
+            if (idx + 1) % 28 == 0:  # Becareful expect 28x28 images
                 f.write(line + "\n")
                 line = ""
 
 
-if __name__ == "__main__":
+def normalize_image(image):
+    """Normalize pixel values from [0, 255] to [0, 1]"""
+    return image / 255.0
+
+
+# Temporay function to be able to call it from another python script
+def parseImages():
     with open("input/train-images.idx3-ubyte", "rb") as f:
         data = f.read()
 
@@ -62,6 +70,18 @@ if __name__ == "__main__":
     images = []
     for i in range(dim1):
         offset = data_offset + (image_size * i)
-        images.append(data[offset : offset + image_size ])
+        images.append(data[offset : offset + image_size])
 
-    printImgToFile(images[3000])
+    return images
+
+if __name__ == "__main__":
+    
+    images = parseImages()
+
+    IMG_IDX = 3000
+
+    printImgToFile(images[IMG_IDX])
+
+    arr = np.frombuffer(images[IMG_IDX], dtype=np.uint8).reshape(-1, 1)
+    arr = normalize_image(arr)
+    print(arr)
