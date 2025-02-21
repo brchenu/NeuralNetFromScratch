@@ -8,7 +8,7 @@ Implementing the network in Python first allows to understand the fundamentals c
 
 ### Neural Net learning process
 
-First init networks parameters i.e: weights and biases (randomly, but can also be done with specific values)
+First init networks parameters i.e: weights and biases (can be done randomly or with specific values)
 
 1. **Forward pass** (Compute output using input data and networks parameters)
 2. **Calcuate loss** (Compare predicted output with ground truth/labels)
@@ -18,23 +18,27 @@ First init networks parameters i.e: weights and biases (randomly, but can also b
 
 #### Forward Pass
 
+![](img/perceptron.png)
+
+###### Forward pass formula
+
 $$
     \hat{y} =  g(\sum_{i=1}^{n} x_i w_i + b) 
 $$
 
-- Multiples weights and inputs for each neurons $w_i *  x_i$
-- Add bias $w_i *  x_i$ + b
-    3. Activate the neuron using activation functions (ex: sigmoid)
-
-2. Compute the Loss (Using Loss/Cost Function)
-3. Gradient Descent
-
+where: 
+- $w_i$ : are weights
+- $x_i$ : are inputs
+- $b$ : is the bias
+- $g$ : is a non-linear activation function
 
 ### Keywords and Definition
 
-Epoch: An epoch is one **complete pass** through the entire training dataset by the neural network.
+#### Epoch 
 
-In a nutshell:
+An epoch is one **complete pass** through the entire training dataset by the neural network.
 
-Neural Net: Is a mathematical function that take an input x, return an output y (predicted output) and that is parametrized by Weights (w) and biases (b)
+#### Neural Network
+
+Is a **mathematical function** that take an input x, return an output y (predicted output) and that is parametrized by Weights (w) and biases(b)
 
