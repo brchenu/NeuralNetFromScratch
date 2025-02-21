@@ -4,3 +4,4 @@ output.txt
 env
 main
 *.out
+__pycache__
