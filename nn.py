@@ -139,11 +139,13 @@ class MLP:
         for l in self.layers:
             l.update(learning_rate)
 
-    def train(self, inputs, truth):
+    # This training function use the Stochastic Gradient Descent method
+    # Because it update model weights after each input pass
+    def train(self, inputs, truth, learning_rate):
         pred = self.forward(inputs)
         loss = loss_function(truth, pred)
 
-        print(f"pred:{pred} / loss:{loss}")
+        # print(f"pred:{pred} / loss:{loss}")
 
         # Here we do: pred - truth, because its the derivative of our loss_function
         grad_loss = [p - t for p,t in zip(pred, truth)]
@@ -152,21 +154,41 @@ class MLP:
         for l in reversed(self.layers):
             grad = l.backward(grad)
         
-        self.update_params(learning_rate=0.01)
+        self.update_params(learning_rate=learning_rate)
+
+        return loss
 
 if __name__ == "__main__":
 
     mlp = MLP([[2, 8], [8, 1]], linear=True)
 
     f  = lambda a,b : 2*a + b
-
     n = 10000
-
+    
     inputs = [[random.uniform(-1, 1), random.uniform(-1, 1)] for _ in range(n)]
-    outputs = [[f(v[0], v[1])] for v in inputs]
+    expected_outputs = [[f(v[0], v[1])] for v in inputs]
 
-    for i, o in zip(inputs, outputs):
-        mlp.train(i, o)
+    epoch = 100
+    learning_rate = 0.0001
 
-    pred = mlp.forward([5,0])
-    print(pred)
+    for idx, _ in enumerate(range(epoch)):
+        total_loss = 0
+        for i, o in zip(inputs, expected_outputs):
+            loss = mlp.train(i, o, learning_rate)
+            total_loss += loss
+
+        total_loss /= len(inputs)
+        print(f"epoch {idx} / loss: {total_loss}")
+    
+    test_size = 100
+
+    test_data = [[random.uniform(-1, 1), random.uniform(-1, 1)] for _ in range(test_size)]
+    test_outputs = [[f(v[0], v[1])] for v in test_data]
+
+    success_rate = 0
+    for x, y in zip(test_data, test_outputs):
+        pred = mlp.forward(x)
+        if (abs(y[0] - pred[0]) <= 0.5):
+            success_rate += 1
+
+    print(f"Success rate: {success_rate}")
