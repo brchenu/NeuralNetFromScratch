@@ -1,5 +1,11 @@
 import random, math
 
+def relu(x):
+    return max(0, x)
+
+def relu_derivative(x):
+    return 1 if x > 0 else 0
+
 def sigmoid(x):
     return 1 / (1 + math.exp(-x))
 
@@ -10,10 +16,11 @@ def loss_function(truth, pred):
     assert(len(truth) == len(pred))
 
     errors = [(t - p)**2 for t, p in zip(truth, pred)]
-    return sum(errors) / 2*len(truth) # Divide by two for derivate convinence
+    return sum(errors) / (2*len(truth)) # Divide by two for derivate convinence
 
 class Neuron:
-    def __init__(self, ninputs):
+    def __init__(self, ninputs, linear = False):
+        self.linear = linear
         self.bias = random.random()
         self.weights = [random.random() for _ in range(ninputs)]
 
@@ -26,7 +33,8 @@ class Neuron:
         for x, w in zip(inputs, self.weights): 
             self.z += x * w
 
-        self.y = sigmoid(self.z)
+        self.y = relu(self.z) if self.linear else sigmoid(self.z)
+
         return self.y
 
     def backward(self, grad_out):
@@ -36,7 +44,7 @@ class Neuron:
         # Chaine rule apply: ∂L/∂z = ∂L/∂a * ∂a/∂z
         #
         # where ∂a/∂z is equal to the derivate of the actiation function
-        grad_z = grad_out * sigmoid_derivate(self.z)
+        grad_z = grad_out * relu_derivative(self.z) if self.linear else sigmoid_derivate(self.z)  
         
         # Get derivate of L w.r.t to w, i.e: ∂L/∂w
         # Chaine rule apply: ∂L/∂w = ∂L/∂a * ∂a/∂z * ∂z/∂w 
@@ -71,13 +79,13 @@ class Neuron:
     
     def update(self, learning_rate):
         # Update weights
-        for grad, w in zip(self.grad_w, self.weights):
-            w = w - grad * learning_rate
-        self.bias = self.bias - self.grad_b * learning_rate
+        for i in range(len(self.weights)):
+            self.weights[i] -= self.grad_w[i] * learning_rate
+        self.bias -= self.grad_b * learning_rate
 
 class Layer:
-    def __init__(self, ninputs, nneurons):
-        self.neurons = [Neuron(ninputs) for _ in range(nneurons)]
+    def __init__(self, ninputs, nneurons, linear = False):
+        self.neurons = [Neuron(ninputs, linear=linear) for _ in range(nneurons)]
 
     def forward(self, inputs):
         outputs = []
@@ -114,11 +122,11 @@ class Layer:
             n.update(learning_rate)
 
 class MLP:
-    def __init__(self, layers_params: int):
+    def __init__(self, layers_params: int, linear=False):
         self.layers = []
         for l in layers_params:
             assert(len(l) == 2)
-            self.layers.append(Layer(l[0], l[1]))
+            self.layers.append(Layer(l[0], l[1], linear=linear))
 
     def forward(self, inputs):
         current_in = inputs
@@ -135,7 +143,7 @@ class MLP:
         pred = self.forward(inputs)
         loss = loss_function(truth, pred)
 
-        print(f"loss:{loss}")
+        print(f"pred:{pred} / loss:{loss}")
 
         # Here we do: pred - truth, because its the derivative of our loss_function
         grad_loss = [p - t for p,t in zip(pred, truth)]
@@ -143,13 +151,22 @@ class MLP:
         grad = grad_loss
         for l in reversed(self.layers):
             grad = l.backward(grad)
+        
+        self.update_params(learning_rate=0.01)
 
 if __name__ == "__main__":
 
-    mlp = MLP([[1, 3], [5, 2]])
+    mlp = MLP([[2, 8], [8, 1]], linear=True)
 
-    truth = [2, 4]
-    x = [8]
+    f  = lambda a,b : 2*a + b
 
-    pred = mlp.forward(x)
-    loss = loss_function(truth, pred)
+    n = 10000
+
+    inputs = [[random.uniform(-1, 1), random.uniform(-1, 1)] for _ in range(n)]
+    outputs = [[f(v[0], v[1])] for v in inputs]
+
+    for i, o in zip(inputs, outputs):
+        mlp.train(i, o)
+
+    pred = mlp.forward([5,0])
+    print(pred)
