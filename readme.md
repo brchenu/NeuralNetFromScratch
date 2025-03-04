@@ -63,8 +63,17 @@ it helps us to find the best parameters (weights and biases) for our model.
 
 3 way of doing Gradient descent
 
+#### Stochastic Gradient Descent (SGD)
 
-####
+?
+
+#### Mini-Batches Gradient Descent
+
+? 
+
+#### Batch Gradient Descent
+
+?
 
 ### Divers
 
