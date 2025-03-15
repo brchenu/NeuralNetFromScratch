@@ -20,7 +20,7 @@ After these steps the weights and biases of the model should have been updated i
 
 ### 1. Forward Pass
 
-![](img/perceptron.png)
+![](img/perceptron_schema.png)
 
 ###### Forward pass formula
 
