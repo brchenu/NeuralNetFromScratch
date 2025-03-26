@@ -16,7 +16,7 @@ def loss_function(truth, pred):
     assert(len(truth) == len(pred))
 
     errors = [(t - p)**2 for t, p in zip(truth, pred)]
-    return sum(errors) / (2*len(truth)) # Divide by two for derivate convinence
+    return sum(errors) / len(truth) # Divide by two for derivate convinence
 
 class Neuron:
     def __init__(self, ninputs, linear = False):
