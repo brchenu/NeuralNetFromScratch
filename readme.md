@@ -1,8 +1,6 @@
 # Neural Network From Scratch
 
-The purpose of this repo was to get a better understanding of how neural networks works under the hood, and what better way to do that than implementing one from scratch without using any ML/DL frameworks like Pytorch and Tensorflow.
-
-On this repo you can find two implementation of this network, one in Python using numpy and one in C++ using only the Cpp standard library.
+This repo was created to better understand how neural networks work by building one from scratch without using ML/DL frameworks like PyTorch or TensorFlow.
 
 Implementing the network in Python first allows to understand the fundamentals concept of neural networks and the maths behind. In the second time building it without numpy (in C++ but it can be any other languages) make you appreciate what a lib like numpy brings you and helps you understand how a simple operation like matrix multiplication can play such an important role for neural networks and have a significant impact on their performance both in inference and in training.
 
