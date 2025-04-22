@@ -45,7 +45,7 @@ def normalize_image(image):
 
 # Temporay function to be able to call it from another python script
 def parseImages():
-    with open("input/train-images.idx3-ubyte", "rb") as f:
+    with open("dataset/training/train-images.idx3-ubyte", "rb") as f:
         data = f.read()
 
     magic_number = data[:4]
