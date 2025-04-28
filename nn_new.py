@@ -45,19 +45,37 @@ class MLP():
 		
 		return current_inputs
 	
-	# def backward(self, gradient):
-
+	def backward(self, gradients):
+		for layer in reversed(self.layers):
+			for neuron, grad in zip(layer.neurons, gradients):
+				neuron.backward(grad)
 
 	def stochastic_train(self, inputs, labels):
 		'''Stochastic gradient descent training function
 		'''
 		assert(len(inputs) == len(labels)) 
 
-		for i,l in zip(inputs, labels):
+		for input, label in zip(inputs, labels):
 			# 1. Forward Pass
-			predict = self.forward(i)
+			logits = self.forward(inputs)
+			proba = softmax(logits)
+
 			# 2. Loss Compute
-			loss = categorical_cross_entropy(l, i)
+			loss = categorical_cross_entropy(label, proba)
+		
+		 	# 3. Compute gradients
+			gradients = [y_proba - y_true for y_proba, y_true in zip(proba, label)]
+
+			# 4. Propagate gradient back to the network
+			self.backward(gradients)
+
+	# def batch_train(self, inputs, labels):
+
+	# 	batch_loss = 0.0
+	# 	batch_proba = []
+
+	# 	batch_proba = [batch_proba[i] + proba[i] for i in range(proba)]
+	# 	batch_loss += loss 
 
 class Layer():
 	def __init__(self, nbin: int, nbneurons: int, activ_func):
@@ -76,11 +94,19 @@ class Neuron():
 		return f"Neuron({self.weights})"
 	
 	def forward(self, inputs):
-		s1 = sum([x*w for x,w in zip(inputs, self.weights)]) + self.bias 
-		return self.activation(s1)
+		self.z = sum([x*w for x,w in zip(inputs, self.weights)]) + self.bias 
+		return self.activation(self.z)
 
-	# def backward(self, gradient):
-		 
+	def backward(self, gradient):
+		# Reminder: 
+		# a = Activation output
+		# z = Raw weigthed input (before activation) = wi*xi+ b
+
+		# gradient = ∂L/∂a 
+
+		# 1. We want ∂L/∂z
+		# Applying chaine rule: ∂L/∂z = ∂L/∂a * ∂a/∂z
+		grad_z = gradient * relu_derivate(self.z)
 
 mlp = MLP([[3, 3], [3, 2]])
 print(mlp.forward([1, 2, 3]))
