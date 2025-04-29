@@ -86,6 +86,7 @@ class Layer():
 
 class Neuron():
 	def __init__(self, nbin: int, activ_func):
+		self.learning_rate = 0.01
 		self.bias = random.random()
 		self.weights = [random.random() for _ in range(nbin)]
 		self.activation = activ_func 
@@ -112,11 +113,23 @@ class Neuron():
 		# Impact of w on L => ∂L/∂w
 		# ∂L/∂w = ∂L/∂z * ∂z/∂w 
 		# z = x*w + b so ∂z/∂w = x
-		grad_w = [grad_z * x for x in self.inputs]
+		self.grad_w = [grad_z * x for x in self.inputs]
 		
+		# Impact of b on L => ∂L/∂b
+	    # ∂L/∂b = ∂L/∂z * ∂z/∂b
+		self.grad_b = grad_z
+
 		# Impact of x on L =>  ∂L/∂x
 		# ∂L/∂x = ∂L/∂x * ∂z/∂x
 		grad_x = [grad_z * w for w in self.weights]
 
+		return grad_x
+	
+	def update(self):
+		for grad, w in zip(self.grad_w, self.weights):
+			w -= grad * self.learning_rate
+		
+		self.bias -= self.grad_b * self.learning_rate
+			
 mlp = MLP([[3, 3], [3, 2]])
 print(mlp.forward([1, 2, 3]))
