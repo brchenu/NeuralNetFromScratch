@@ -94,6 +94,7 @@ class Neuron():
 		return f"Neuron({self.weights})"
 	
 	def forward(self, inputs):
+		self.inputs = inputs
 		self.z = sum([x*w for x,w in zip(inputs, self.weights)]) + self.bias 
 		return self.activation(self.z)
 
@@ -102,11 +103,20 @@ class Neuron():
 		# a = Activation output
 		# z = Raw weigthed input (before activation) = wi*xi+ b
 
-		# gradient = ∂L/∂a 
+		# gradient = ∂L/∂a  
 
-		# 1. We want ∂L/∂z
+		# Impact of z on L => ∂L/∂z
 		# Applying chaine rule: ∂L/∂z = ∂L/∂a * ∂a/∂z
 		grad_z = gradient * relu_derivate(self.z)
+
+		# Impact of w on L => ∂L/∂w
+		# ∂L/∂w = ∂L/∂z * ∂z/∂w 
+		# z = x*w + b so ∂z/∂w = x
+		grad_w = [grad_z * x for x in self.inputs]
+		
+		# Impact of x on L =>  ∂L/∂x
+		# ∂L/∂x = ∂L/∂x * ∂z/∂x
+		grad_x = [grad_z * w for w in self.weights]
 
 mlp = MLP([[3, 3], [3, 2]])
 print(mlp.forward([1, 2, 3]))
