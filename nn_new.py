@@ -13,8 +13,8 @@ def categorical_cross_entropy(truth, pred):
 	loss = 0.0
 	nb_samples = len(truth)
 	for i in range(nb_samples):
-		pred = max(min(pred[i], 1 - epsilon), epsilon)
-		loss += truth[i] * math.log(pred)
+		pred[i] = max(min(pred[i], 1 - epsilon), epsilon)
+		loss += truth[i] * math.log(pred[i])
 	
 	return -loss / nb_samples
 
@@ -52,8 +52,9 @@ class MLP():
 	
 	def backward(self, gradients):
 		for layer in reversed(self.layers):
-			for neuron, grad in zip(layer.neurons, gradients):
-				neuron.backward(grad)
+			curr_grad = gradients
+			for neuron in layer.neurons:
+				curr_grad = neuron.backward(curr_grad)
 
 	def update(self, learning_rate):
 		for l in self.layers:
@@ -67,7 +68,7 @@ class MLP():
 
 		for input, label in zip(inputs, labels):
 			# 1. Forward Pass
-			logits = self.forward(inputs)
+			logits = self.forward(input)
 			proba = softmax(logits)
 
 			# 2. Loss Compute
@@ -144,8 +145,8 @@ class Layer():
 class Neuron():
 	def __init__(self, nbin: int, activ_func):
 		self.learning_rate = 0.01
-		self.bias = random.random()
-		self.weights = [random.random() for _ in range(nbin)]
+		self.bias = random.random(-1, 1)
+		self.weights = [random.random(-1, 1) for _ in range(nbin)]
 		self.activation = activ_func 
 
 	def __repr__(self):
@@ -184,10 +185,43 @@ class Neuron():
 		return grad_x
 	
 	def update(self, learning_rate):
-		for grad, w in zip(self.grad_w, self.weights):
-			w -= grad * learning_rate
+		for i in range(self.weights):
+			self.weights[i] -= self.grad_w[i] * learning_rate
 		
 		self.bias -= self.grad_b * learning_rate
 			
-mlp = MLP([[3, 3], [3, 2]])
-print(mlp.forward([1, 2, 3]))
+mlp = MLP([[2, 2], [2, 2], [2, 2]])
+
+def generate_linear_dataset(n_samples=1000):
+    inputs = []
+    labels = []
+    for _ in range(n_samples):
+        x1 = random.uniform(0, 1)
+        x2 = random.uniform(0, 1)
+        label = 1 if x1 + x2 > 1 else 0  # linearly separable line: x1 + x2 = 1
+        inputs.append([x1, x2])
+        labels.append([1, 0] if label == 0 else [0, 1])
+    return inputs, labels
+
+# inputs = [
+#     [0, 0],
+#     [0, 1],
+#     [1, 0],
+#     [1, 1]
+# ]
+
+# labels = [
+#     [1, 0],  # output 0 -> class 0
+#     [0, 1],  # output 1 -> class 1
+#     [0, 1],  # output 1 -> class 1
+#     [1, 0]   # output 0 -> class 0
+# ]
+
+inputs, labels = generate_linear_dataset()
+
+epochs = 500
+for _ in range(epochs):
+	mlp.minibatches_train(inputs, labels, batch_size=50, learning_rate=0.25)
+
+
+print(f"0: {softmax(mlp.forward(inputs[0]))}")
