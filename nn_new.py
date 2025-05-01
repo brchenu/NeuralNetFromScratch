@@ -1,5 +1,11 @@
 import random, math
 
+def linear(x):
+	return x
+
+def linear_derivate(x):
+	return 1.0
+
 def relu(x):
 	return max(0, x)
 
@@ -13,8 +19,8 @@ def categorical_cross_entropy(truth, pred):
 	loss = 0.0
 	nb_samples = len(truth)
 	for i in range(nb_samples):
-		pred[i] = max(min(pred[i], 1 - epsilon), epsilon)
-		loss += truth[i] * math.log(pred[i])
+		p = max(min(pred[i], 1 - epsilon), epsilon)
+		loss += truth[i] * math.log(p)
 	
 	return -loss / nb_samples
 
@@ -38,8 +44,8 @@ def get_batches(inputs, labels, batch_size):
 		yield inputs[i:i+batch_size], labels[i:i+batch_size]
 
 class MLP():
-	def __init__(self, params: list, activ_func = relu):
-		self.layers = [Layer(param[0], param[1], activ_func) for param in params]
+	def __init__(self, params: list):
+		self.layers = [Layer(param[0], param[1], param[2]) for param in params]
 	
 	def forward(self, inputs):
 		assert(len(inputs) == len(self.layers[0].neurons[0].weights))
@@ -51,10 +57,9 @@ class MLP():
 		return current_inputs
 	
 	def backward(self, gradients):
+		curr_grads = gradients
 		for layer in reversed(self.layers):
-			curr_grad = gradients
-			for neuron in layer.neurons:
-				curr_grad = neuron.backward(curr_grad)
+			curr_grads = layer.backward(curr_grads)
 
 	def update(self, learning_rate):
 		for l in self.layers:
@@ -137,17 +142,30 @@ class MLP():
 
 class Layer():
 	def __init__(self, nbin: int, nbneurons: int, activ_func):
+		assert(len(activ_func) == 2)
 		self.neurons = [Neuron(nbin, activ_func) for _ in range(nbneurons)]
 	
 	def forward(self, inputs: list):
 		return [n.forward(inputs) for n in self.neurons]
+	
+	def backward(self, gradients):
+		assert(len(gradients) == len(self.neurons))
+
+		summed_out = [0.0] * len(self.neurons[0].weights)
+		for neuron, grad in zip(self.neurons, gradients):
+			out = neuron.backward(grad)
+			summed_out = [s + o for s,o in zip(summed_out, out)]
+
+		return summed_out
 
 class Neuron():
 	def __init__(self, nbin: int, activ_func):
-		self.learning_rate = 0.01
-		self.bias = random.random(-1, 1)
-		self.weights = [random.random(-1, 1) for _ in range(nbin)]
-		self.activation = activ_func 
+		assert(len(activ_func) == 2)
+
+		self.bias = random.uniform(-1, 1)
+		self.weights = [random.uniform(-1, 1) for _ in range(nbin)]
+		self.activation = activ_func[0] 
+		self.activation_deriv = activ_func[1]
 
 	def __repr__(self):
 		return f"Neuron({self.weights})"
@@ -166,7 +184,7 @@ class Neuron():
 
 		# Impact of z on L => ∂L/∂z
 		# Applying chaine rule: ∂L/∂z = ∂L/∂a * ∂a/∂z
-		grad_z = gradient * relu_derivate(self.z)
+		grad_z = gradient * self.activation_deriv(self.z)
 
 		# Impact of w on L => ∂L/∂w
 		# ∂L/∂w = ∂L/∂z * ∂z/∂w 
@@ -185,12 +203,15 @@ class Neuron():
 		return grad_x
 	
 	def update(self, learning_rate):
-		for i in range(self.weights):
+		for i in range(len(self.weights)):
 			self.weights[i] -= self.grad_w[i] * learning_rate
 		
 		self.bias -= self.grad_b * learning_rate
 			
-mlp = MLP([[2, 2], [2, 2], [2, 2]])
+linear_func = (linear, linear_derivate)
+relu_func = (relu, relu_derivate)
+
+mlp = MLP([[2, 2, relu_func], [2, 2, relu_func], [2, 2, linear_func]])
 
 def generate_linear_dataset(n_samples=1000):
     inputs = []
@@ -203,23 +224,9 @@ def generate_linear_dataset(n_samples=1000):
         labels.append([1, 0] if label == 0 else [0, 1])
     return inputs, labels
 
-# inputs = [
-#     [0, 0],
-#     [0, 1],
-#     [1, 0],
-#     [1, 1]
-# ]
-
-# labels = [
-#     [1, 0],  # output 0 -> class 0
-#     [0, 1],  # output 1 -> class 1
-#     [0, 1],  # output 1 -> class 1
-#     [1, 0]   # output 0 -> class 0
-# ]
-
 inputs, labels = generate_linear_dataset()
 
-epochs = 500
+epochs = 50
 for _ in range(epochs):
 	mlp.minibatches_train(inputs, labels, batch_size=50, learning_rate=0.25)
 
