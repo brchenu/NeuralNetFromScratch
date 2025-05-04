@@ -12,7 +12,18 @@ def relu(x):
 def relu_derivate(x):
 	return 1.0 if x > 0 else 0.0
 
+def softmax(logits):
+	# Here we need to avoid overflow, if logit is large exp(logit) will be to large
+	# We are only concerned with relativbe difference between logits
+	# So we find the biggest logit and substract it to every other
+	max_logit = max(logits)
+	exp_logits = [math.exp(logit - max_logit) for logit in logits]
+	exp_sum = sum(exp_logits)
+
+	return [exp_logit/exp_sum for exp_logit in exp_logits]
+
 def cross_entropy_loss(logits, label):
+	'''Categorical Cross Entropy (CCE) and Softmax combined loss function '''
 	assert(len(logits)== len(label))
 
 	pred = softmax(logits) # Convert logits to probabilistic prediction
@@ -31,14 +42,21 @@ def cross_entropy_loss(logits, label):
 
 	return loss, gradients
 
-def softmax(logits):
-	# Here we need to avoid overflow, if logit is large exp(logit) will be to large
-	# We are only concerned with relativbe difference between logits
-	# So we find the biggest logit and substract it to every other
-	max_logit = max(logits)
-	exp_logits = [math.exp(logit - max_logit) for logit in logits]
-	exp_sum = sum(exp_logits)
-	return [exp_logit/exp_sum for exp_logit in exp_logits]
+def mse_loss(predictions, targets):
+    assert len(predictions) == len(targets)
+
+    loss = 0.0
+    gradients = []
+
+    for y_pred, y_true in zip(predictions, targets):
+        diff = y_pred - y_true
+        loss += diff ** 2
+        gradients.append(2 * diff)  # Derivative of (y_pred - y_true)^2
+
+    loss /= len(predictions)
+    gradients = [g / len(predictions) for g in gradients] 
+
+    return loss, gradients
 
 def get_batches(inputs, labels, batch_size):
 	''' Utility function to split inputs and in smaller batches'''
@@ -47,8 +65,9 @@ def get_batches(inputs, labels, batch_size):
 		yield inputs[i:i+batch_size], labels[i:i+batch_size]
 
 class MLP():
-	def __init__(self, params: list):
+	def __init__(self, params: list, loss_function):
 		self.layers = [Layer(param[0], param[1], param[2]) for param in params]
+		self.loss_function = loss_function
 	
 	def forward(self, inputs):
 		assert(len(inputs) == len(self.layers[0].neurons[0].weights))
@@ -78,7 +97,7 @@ class MLP():
 			logits = self.forward(input)
 
 		 	# 2. Compute Loss and gradients
-			loss, gradients = cross_entropy_loss(logits, label)
+			loss, gradients = self.loss_function(logits, label)
 
 			print(f"loss: {loss}")
 
@@ -100,7 +119,7 @@ class MLP():
 				logits = self.forward(input)
 				
 				# 2. Compute Loss and gradients
-				loss, gradients = cross_entropy_loss(logits, label)
+				loss, gradients = self.loss_function(logits, label)
 
 				total_loss += loss
 				accumulated_gradients.append(gradients)
@@ -126,7 +145,7 @@ class MLP():
 			logits = self.forward(input)
 
 			# 2. Compute Loss and graidents
-			loss, gradients = cross_entropy_loss(logits, label)
+			loss, gradients = self.loss_function(logits, label)
 
 			total_loss += loss
 			accumulate_gradient.append(gradients)
@@ -221,21 +240,57 @@ class Neuron():
 linear_func = (linear, linear_derivate)
 relu_func = (relu, relu_derivate)
 
-mlp = MLP([[2, 2, relu_func], [2, 2, relu_func], [2, 2, linear_func]])
+# Accucracy function use for classifiations tasks 
+def evaluate_accuracy(model, inputs, labels):
+    correct = 0
+    for x, y in zip(inputs, labels):
+        output = softmax(model.forward(x))
+        predicted = output.index(max(output))
+        actual = y.index(max(y))
+        if predicted == actual:
+            correct += 1
+    return correct / len(inputs)
 
-def generate_linear_dataset(n_samples=1000):
-    inputs = []
-    labels = []
-    for _ in range(n_samples):
-        x1 = random.uniform(0, 1)
-        x2 = random.uniform(0, 1)
-        label = 1 if x1 + x2 > 1 else 0  # linearly separable line: x1 + x2 = 1
-        inputs.append([x1, x2])
-        labels.append([1, 0] if label == 0 else [0, 1])
-    return inputs, labels
 
-inputs, labels = generate_linear_dataset()
+# Find the output range manually
+f_min = 5
+f_max = 7
 
-epochs = 50
+# Normalized version
+def normalize(y):
+    return (y - f_min) / (f_max - f_min)
+
+def denormalize(y):
+    return y * (f_max - f_min) + f_min
+
+f  = lambda a : 2*(a**2) + 5
+n = 10000
+
+inputs = [[random.uniform(-1, 1)] for _ in range(n)]
+labels = [[normalize(f(x[0]))] for x in inputs]
+
+mlp = MLP([[1, 16, relu_func], [16, 8, relu_func], [8, 1, linear_func]], mse_loss)
+
+epochs = 30 
+
 for _ in range(epochs):
-	mlp.minibatches_train(inputs, labels, batch_size=50, learning_rate=0.25)
+	mlp.minibatches_train(inputs, labels, batch_size=1, learning_rate=0.001)
+
+# for _ in range(epochs):
+	# mlp.stochastic_train(inputs, labels, learning_rate=0.001)
+
+test_data = [[random.uniform(-1, 1)] for _ in range(100)]
+test_outputs = [[f(v[0])] for v in test_data]
+
+success_rate = 1
+for x, y in zip(test_data, test_outputs):
+	pred = mlp.forward(x)
+	print(f"diff: {abs(y[0] - denormalize(pred[0]))}")
+	if (abs(y[0] - denormalize(pred[0])) <= 0.05):
+		success_rate += 1
+
+print(f"Success rate: {success_rate}")
+
+print(f"forward: {denormalize(mlp.forward([0.5])[0])} : {f(0.5)}")
+print(f"forward: {denormalize(mlp.forward([0.3])[0])} : {f(0.3)}")
+print(f"forward: {denormalize(mlp.forward([-0.85])[0])} : {f(-0.85)}")
