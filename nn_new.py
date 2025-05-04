@@ -11,34 +11,37 @@ def relu(x):
 
 def relu_derivate(x):
 	return 1.0 if x > 0 else 0.0
-	
-def categorical_cross_entropy(truth, pred):
-	assert(len(truth) == len(pred))
 
-	epsilon = 1e-15
+def cross_entropy_loss(logits, label):
+	assert(len(logits)== len(label))
+
+	pred = softmax(logits) # Convert logits to probabilistic prediction
+	epsilon = 1e-15 # Here to avoid log(0)
+
 	loss = 0.0
-	nb_samples = len(truth)
-	for i in range(nb_samples):
-		p = max(min(pred[i], 1 - epsilon), epsilon)
-		loss += truth[i] * math.log(p)
-	
-	return -loss / nb_samples
+	gradients = []
+
+	# Compute directly loss and gradients
+	for y_true, y_pred in zip(label, pred):
+		p = max(min(y_pred, 1 - epsilon), epsilon) # Clamp y_preed to avoid log(0)
+		loss += -(y_true * math.log(p))
+
+		# Derivate of Loss w.r.t logits (softmax + CE derivate)
+		gradients.append(y_pred - y_true)
+
+	return loss, gradients
 
 def softmax(logits):
-	exp_logits = [math.exp(logit) for logit in logits]
+	# Here we need to avoid overflow, if logit is large exp(logit) will be to large
+	# We are only concerned with relativbe difference between logits
+	# So we find the biggest logit and substract it to every other
+	max_logit = max(logits)
+	exp_logits = [math.exp(logit - max_logit) for logit in logits]
 	exp_sum = sum(exp_logits)
 	return [exp_logit/exp_sum for exp_logit in exp_logits]
 
-def batch_categorical_cross_entropy(truth, pred):
-	assert(len(truth) == len(pred))
-
-	total_loss = 0.0
-	for t, p in zip(truth, pred):
-		total_loss += categorical_cross_entropy(t, p)
-		
-	return total_loss
-
 def get_batches(inputs, labels, batch_size):
+	''' Utility function to split inputs and in smaller batches'''
 	assert(len(inputs) == len(labels))
 	for i in range(0, len(inputs), batch_size):
 		yield inputs[i:i+batch_size], labels[i:i+batch_size]
@@ -67,27 +70,22 @@ class MLP():
 				neuron.update(learning_rate)
 
 	def stochastic_train(self, inputs, labels, learning_rate=0.1):
-		'''Stochastic gradient descent training function
-		'''
+		'''Stochastic gradient descent training function'''
 		assert(len(inputs) == len(labels)) 
 
 		for input, label in zip(inputs, labels):
 			# 1. Forward Pass
 			logits = self.forward(input)
-			proba = softmax(logits)
 
-			# 2. Loss Compute
-			loss = categorical_cross_entropy(label, proba)
+		 	# 2. Compute Loss and gradients
+			loss, gradients = cross_entropy_loss(logits, label)
 
 			print(f"loss: {loss}")
-		
-		 	# 3. Compute gradients
-			gradients = [y_proba - y_true for y_proba, y_true in zip(proba, label)]
 
-			# 4. Propagate gradient back to the network
+			# 3. Propagate gradient back to the network
 			self.backward(gradients)
 
-			# 5. Update networks parameters
+			# 4. Update networks parameters
 			self.update(learning_rate)
 		
 	def minibatches_train(self, inputs, labels, batch_size, learning_rate=0.1): 
@@ -100,45 +98,46 @@ class MLP():
 			for input, label in zip(batch_in, batch_lab):
 				# 1. Forward pass
 				logits = self.forward(input)
-				proba = softmax(logits)
 				
-				# 2. Compute and accumulate loss
-				total_loss += categorical_cross_entropy(label, proba)
+				# 2. Compute Loss and gradients
+				loss, gradients = cross_entropy_loss(logits, label)
 
-				# 3. Compute and accumulate gradients 
-				gradients = [y_proba - y_true for y_proba, y_true in zip(proba, label)]
+				total_loss += loss
 				accumulated_gradients.append(gradients)
 			
-			# 4. Average gradients
+			# 3. Average the Loss and gradients over the entire batch
+			total_loss /= len(batch_in)
 			avg_gradients = [sum(grad[i] for grad in accumulated_gradients) / len(batch_in)
                          for i in range(len(accumulated_gradients[0]))]	
+			print(f"Batch loss: {total_loss}")
 			
+			# 4. Backprogration
 			self.backward(avg_gradients)
-			self.update(learning_rate)
 
-			print(f"Batch loss: {total_loss / len(batch_in)}")
+			# 5. Update parameters
+			self.update(learning_rate)
 
 	def batch_train(self, inputs, labels, learning_rate=0.1):
 		total_loss = 0
 		accumulate_gradient = []
+
 		for input, label in zip(inputs, labels):
 			# 1. Forward pass
 			logits = self.forward(input)
-			proba = softmax(logits)
 
-			# 2. Compute and accumulate loss
-			total_loss += categorical_cross_entropy(label, proba)
+			# 2. Compute Loss and graidents
+			loss, gradients = cross_entropy_loss(logits, label)
 
-			# 3. Compute and accumulate gradients
-			gradients = [y_proba - y_true for y_proba, y_true in zip(proba, label)]
+			total_loss += loss
 			accumulate_gradient.append(gradients)
 
+		# 3. Average loss and gradients over the entire batch
+		total_loss /= len(inputs)
 		avg_gradients = [sum(grad[i] for grad in accumulate_gradient) / len(inputs) for i in range(len(accumulate_gradient[0]))]
+		print(f"Batch loss: {total_loss}")
 	
 		self.backward(avg_gradients)
 		self.update(learning_rate)
-
-		print(f"Batch loss: {total_loss / len(inputs)}")
 
 class Layer():
 	def __init__(self, nbin: int, nbneurons: int, activ_func):
@@ -150,6 +149,17 @@ class Layer():
 	
 	def backward(self, gradients):
 		assert(len(gradients) == len(self.neurons))
+
+		# In this function we need to sum the gradients returned by our different neurons for the 
+		# same inputs because our inputs which is the output of a Neuron in the Layer L-1 affect every 
+		# neuron in the layer L
+        #
+        # Ex: If I have 2 Neurons, and 3 inputs (x1, x2, x3), each neurons backward will return [x1_grad, x2_grad, x3_grad]
+        # So we need to sum the x1_grad of the neuron N1 with the x1_grad of the neuron N2 in order to have
+        # the entire impact of x1 before propagating it back to the previous layer.
+        #
+        # The reason we do that as mentionned above is because if we want to know the impact of x1 on the Loss 
+        # we need to sum up all of its contribution.
 
 		summed_out = [0.0] * len(self.neurons[0].weights)
 		for neuron, grad in zip(self.neurons, gradients):
@@ -184,7 +194,7 @@ class Neuron():
 
 		# Impact of z on L => ∂L/∂z
 		# Applying chaine rule: ∂L/∂z = ∂L/∂a * ∂a/∂z
-		grad_z = gradient * self.activation_deriv(self.z)
+		grad_z =  gradient * self.activation_deriv(self.z) 
 
 		# Impact of w on L => ∂L/∂w
 		# ∂L/∂w = ∂L/∂z * ∂z/∂w 
@@ -229,6 +239,3 @@ inputs, labels = generate_linear_dataset()
 epochs = 50
 for _ in range(epochs):
 	mlp.minibatches_train(inputs, labels, batch_size=50, learning_rate=0.25)
-
-
-print(f"0: {softmax(mlp.forward(inputs[0]))}")
