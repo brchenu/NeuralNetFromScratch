@@ -53,38 +53,44 @@ class MLP():
 
     def train(self, inputs, labels, epochs, batch_size, learning_rate):
         assert(len(inputs) == len(labels))
-        
-        batch_inputs = [inputs[i:i + batch_size] for i in range(0, len(inputs), batch_size)]
-        batch_labels = [labels[i:i + batch_size] for i in range(0, len(labels), batch_size)]
-        
+
         for epoch in range(epochs):
-            for batch_idx, (batch_in, batch_lab) in enumerate(zip(batch_inputs, batch_labels)):
-                total_loss = 0
-                accumulated_gradients = []
-                for input, label in zip(batch_in, batch_lab):
+
+            # Shuffle inputs between epoch to avoid different learning issues
+            combined = list(zip(inputs, labels))
+            random.shuffle(combined)
+            shuffle_inputs, shuffle_labels = zip(*combined)
+
+            for i in range(0, len(inputs), batch_size):
+
+                batch_input = shuffle_inputs[i:i + batch_size]
+                batch_label = shuffle_labels[i:i + batch_size]
+
+                for layer in self.layers:
+                    layer.reset_accumulate_gradients()
+
+                total_loss = 0.0
+                for input, label in zip(batch_input, batch_label):
                     # 1. Forward pass
                     activation = input
                     for layer in self.layers:
                         activation = layer.forward(activation)
                     
-                    # here the final activation is equal to the network prediction
-
                     # 2. Compute Loss
                     loss, gradients = self.loss_func(activation, label)
-
                     total_loss += loss
-                    accumulated_gradients.append(gradients)
+
+                    # 3. Back propagation
+                    for layer in reversed(self.layers):
+                        gradients = layer.backward(gradients)
+                        layer.accumulate_gradients()
                 
-                total_loss /= len(batch_in) # don't use batch_size here batch may be smaller !
-                average_gradients = [sum(grad[i] for grad in accumulated_gradients) / len(batch_in) for i in range(len(accumulated_gradients[0]))]
+                # 4. Update network params
+                for layer in self.layers:
+                    layer.update(learning_rate, len(batch_input))
 
-                # 3. Back propagation and params update
-                gradients = average_gradients
-                for layer in reversed(self.layers):
-                    gradients = layer.backward(gradients)
-                    layer.update(learning_rate)
-
-                print(f"Epoch {epoch+1}/{epochs} - Batch {batch_idx + 1}/{len(batch_inputs)} -> Loss: {total_loss:.4f}")
+                total_loss /= len(batch_input) 
+                print(f"Epoch {epoch+1}/{epochs} - Batch {i/batch_size + 1}/{math.ceil(len(inputs)/batch_size)} -> Loss: {total_loss:.4f}")
         
     def evaluate(self, inputs, labels):
         correct = 0
@@ -105,9 +111,9 @@ class Layer():
     def __init__(self, nbin, nbneurons, activation_func):
         limit = math.sqrt(2/nbin)
         # Initialize weights and biases
-        self.weights = [[random.uniform(0, limit) for _ in range(nbin)] for _ in range(nbneurons)] # Kaiming He initialization
+        self.weights = [[random.uniform(-limit, limit) for _ in range(nbin)] for _ in range(nbneurons)] # Kaiming He initialization
         self.biases = [0.1 for _ in range(nbneurons)] # To avoid dying ReLU problem
-
+        
         # Set activation function and it's derivate
         if activation_func == 'relu':
             self.activ_func = relu
@@ -161,12 +167,24 @@ class Layer():
 
         return self.grad_x
     
-    def update(self, learning_rate):
+    def update(self, learning_rate, batch_size):
         # Update biases
         for i in range(len(self.biases)):
-            self.biases[i] -= self.grad_b[i] * learning_rate
+            self.biases[i] -= (self.grad_b_sum[i] / batch_size) * learning_rate
 
         # Update weights
         for i in range(len(self.weights)):
             for j in range(len(self.weights[i])):
-                self.weights[i][j] -= self.grad_w[i][j] * learning_rate
+                self.weights[i][j] -= (self.grad_w_sum[i][j] / batch_size) * learning_rate
+    
+    def reset_accumulate_gradients(self):
+        self.grad_w_sum = [[0.0] * len(w) for w in self.weights] 
+        self.grad_b_sum = [0.0] * len(self.biases)
+         
+    def accumulate_gradients(self):
+        for i in range(len(self.grad_b)):
+            self.grad_b_sum[i] += self.grad_b[i]
+        
+        for i in range(len(self.grad_w)):
+            for j in range(len(self.grad_w[i])):
+                self.grad_w_sum[i][j] += self.grad_w[i][j]

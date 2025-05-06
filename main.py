@@ -1,35 +1,54 @@
-from nn import MLP
+from mlp import MLP, cross_entropy_loss
 from mnist_parser import parse_images, parse_labels
 
-images = parse_images("dataset/training/train-images.idx3-ubyte")
-labels = parse_labels("dataset/training/train-labels.idx1-ubyte")
+def getChar(value):
+    density_line = "@%#*+=-:. "
+    char_idx = (len(density_line) - 1) * value // 255; 
+    return density_line[char_idx]
 
-test_images = parse_images("dataset/test/t10k-images.idx3-ubyte")
-test_labels = parse_labels("dataset/test/t10k-labels.idx1-ubyte")
-
-def split_in_batch(lst, x): 
-    return [lst[i:i + x] for i in range(0, len(lst), x)]
+def print_image(image):
+    line = ""
+    for i, val in enumerate(image):
+        line += getChar(val) 
+        if (i + 1) % 28 == 0:
+            print(line)
+            line = ""
 
 def to_list(label):
     label_lst = [0.0] * 10
     label_lst[label] = 1.0
     return label_lst
 
-batches_img = split_in_batch(images, 300)
-batches_label = split_in_batch(labels, 300) 
+def to_one_hot_encoding(labels: list):
+    return [to_list(label) for label in labels]
 
-print(f"batches len: {len(batches_img)}")
-print(f"batches len: {len(batches_label)}")
+images = parse_images("dataset/training/train-images.idx3-ubyte")
+raw_labels = parse_labels("dataset/training/train-labels.idx1-ubyte")
+labels = to_one_hot_encoding(raw_labels)
 
-mlp = MLP([[728, 128], [128, 64], [64, 10]])
+test_images = parse_images("dataset/test/t10k-images.idx3-ubyte")
+raw_test_labels = parse_labels("dataset/test/t10k-labels.idx1-ubyte")
+test_labels = to_one_hot_encoding(raw_test_labels)
 
-epoch = 100
-learning_rate = 0.1
+# Normalize inputs
+images = [[pixel / 255.0 for pixel in img] for img in images]
+test_images = [[pixel / 255.0 for pixel in img] for img in test_images]
 
-for images, labels in zip(batches_img, batches_label):
-    total_loss = 0
-    for img, label in zip(images, labels):
-        loss = mlp.train(img, to_list(label), learning_rate)
-        total_loss += loss
-    
-    print(f"Batch loss: {total_loss/len(images)}")
+sub_img = images[:20000]
+sub_label = labels[:20000]
+
+shape = [784, 128, 10]
+activations = ['relu', 'linear']
+
+epochs = 3
+batch_size = 32 
+learning_rate = 0.01
+
+mlp = MLP(shape, activations, cross_entropy_loss)
+
+mlp.train(sub_img, sub_label, epochs, batch_size, learning_rate)
+
+sub_test_img = test_images[:1000]
+sub_test_label = test_labels[:1000]
+
+print(f"success rate: {mlp.evaluate(sub_test_img, sub_test_label)}") 
