@@ -12,6 +12,36 @@ def linear(x):
 def linear_derivative(x):
     return 1
 
+def softmax(logits):
+	# Here we need to avoid overflow, if logit is large exp(logit) will be to large
+	# We are only concerned with relativbe difference between logits
+	# So we find the biggest logit and substract it to every other
+	max_logit = max(logits)
+	exp_logits = [math.exp(logit - max_logit) for logit in logits]
+	exp_sum = sum(exp_logits) + 1e-15 # avoid dividing by zero
+
+	return [exp_logit/exp_sum for exp_logit in exp_logits]
+
+def cross_entropy_loss(logits, label):
+	'''Categorical Cross Entropy (CCE) and Softmax combined loss function '''
+	assert(len(logits)== len(label))
+
+	pred = softmax(logits) # Convert logits to probabilistic prediction
+	epsilon = 1e-15 # Here to avoid log(0)
+
+	loss = 0.0
+	gradients = []
+
+	# Compute directly loss and gradients
+	for y_true, y_pred in zip(label, pred):
+		p = max(min(y_pred, 1 - epsilon), epsilon) # Clamp y_preed to avoid log(0)
+		loss += -(y_true * math.log(p))
+
+		# Derivate of Loss w.r.t logits (softmax + CE derivate)
+		gradients.append(y_pred - y_true)
+
+	return loss, gradients
+
 class MLP():
 
     def __init__(self, layers_sizes, activations_func, loss_func):
@@ -20,6 +50,41 @@ class MLP():
 
         self.loss_func = loss_func
         self.layers = [Layer(layers_sizes[i], layers_sizes[i+1], activations_func[i]) for i in range(len(layers_sizes) - 1)]
+
+    def train(self, inputs, labels, epochs, batch_size, learning_rate):
+        assert(len(inputs) == len(labels))
+        
+        batch_inputs = [inputs[i:i + batch_size] for i in range(0, len(inputs), batch_size)]
+        batch_labels = [labels[i:i + batch_size] for i in range(0, len(labels), batch_size)]
+        
+        for epoch in range(epochs):
+            for batch_idx, (batch_in, batch_lab) in enumerate(zip(batch_inputs, batch_labels)):
+                total_loss = 0
+                accumulated_gradients = []
+                for input, label in zip(batch_in, batch_lab):
+                    # 1. Forward pass
+                    activation = input
+                    for layer in self.layers:
+                        activation = layer.forward(activation)
+                    
+                    # here the final activation is equal to the network prediction
+
+                    # 2. Compute Loss
+                    loss, gradients = self.loss_func(activation, label)
+
+                    total_loss += loss
+                    accumulated_gradients.append(gradients)
+                
+                total_loss /= len(batch_in) # don't use batch_size here batch may be smaller !
+                average_gradients = [sum(grad[i] for grad in accumulated_gradients) / len(batch_in) for i in range(len(accumulated_gradients[0]))]
+
+                # 3. Back propagation and params update
+                gradients = average_gradients
+                for layer in reversed(self.layers):
+                    gradients = layer.backward(gradients)
+                    layer.update(learning_rate)
+
+                print(f"Epoch {epoch+1}/{epochs} - Batch {batch_idx + 1}/{len(batch_inputs)} -> Loss: {total_loss:.4f}")
 
 class Layer():
     def __init__(self, nbin, nbneurons, activation_func):
@@ -36,7 +101,7 @@ class Layer():
             self.activ_func = linear
             self.activ_func_deriv = linear_derivative
         else:
-            sys.abort(f"Unknown activation function {activation_func}")
+            sys.exit(f"Unknown activation function {activation_func}")
     
     def forward(self, x):
         assert(len(x) == len(self.weights[0]))
@@ -78,3 +143,15 @@ class Layer():
         self.grad_x = [sum(self.grad_z[j] * self.weights[j][i] for j in range(len(self.weights))) for i in range(len(self.x))]
 
         assert(len(self.grad_x) == len(self.weights[0]))
+
+        return self.grad_x
+    
+    def update(self, learning_rate):
+        # Update biases
+        for i in range(len(self.biases)):
+            self.biases[i] -= self.grad_b[i] * learning_rate
+
+        # Update weights
+        for i in range(len(self.weights)):
+            for j in range(len(self.weights[i])):
+                self.weights[i][j] -= self.grad_w[i][j] * learning_rate
