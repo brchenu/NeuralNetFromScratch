@@ -85,6 +85,21 @@ class MLP():
                     layer.update(learning_rate)
 
                 print(f"Epoch {epoch+1}/{epochs} - Batch {batch_idx + 1}/{len(batch_inputs)} -> Loss: {total_loss:.4f}")
+        
+    def evaluate(self, inputs, labels):
+        correct = 0
+        for input, label in zip(inputs, labels):
+            activation = input
+            for layer in self.layers:
+                activation = layer.forward(activation)
+
+            pred_idx = activation.index(max(activation)) 
+            true_idx = label.index(max(label))
+            
+            if pred_idx == true_idx:
+                correct += 1
+
+        return 100 * correct / len(inputs)
 
 class Layer():
     def __init__(self, nbin, nbneurons, activation_func):
