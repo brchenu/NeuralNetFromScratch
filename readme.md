@@ -11,7 +11,7 @@ First init networks parameters i.e: weights and biases (can be done randomly or 
 1. **Forward pass** (Compute output using input data and networks parameters)
 2. **Calcuate loss** (Compare predicted output with ground truth/labels)
 3. **Backward pass (Backpropagation)** (Compute gradients of loss with respect to weights)
-4. **Update weights (Gradient descent)** It involves substracting the gradient multiplied by the learning rate frm the current parameters values (parameters which are weights and biases)
+4. **Update weights (Gradient descent)** It involves substracting the gradient multiplied by the learning rate from the current parameters values (parameters which are weights and biases)
 5. Repeat (over multiples epochs)
 
 After these steps the weights and biases of the model should have been updated in order to approximate
@@ -72,6 +72,32 @@ it helps us to find the best parameters (weights and biases) for our model.
 #### Batch Gradient Descent
 
 ?
+
+### Loss Function
+
+#### Categorial Cross-Entropy
+
+### Categorical Cross-Entropy Loss
+
+The Categorical Cross-Entropy Loss is calculated as:
+
+### Categorical Cross-Entropy Loss
+
+The Categorical Cross-Entropy Loss is calculated as:
+
+$$
+L = -\sum_{i=1}^{C} y_i \cdot \log(p_i)
+$$
+
+Where:
+- $L$ is the loss to minimize during training.
+- $C$ is the number of classes (e.g., $C = 10$ for digits 0-9).
+- $y_i$ is the true label for class $i$ (one-hot encoded, i.e., $y_i = 1$ for the true class, and $y_j = 0$ for all other $j \neq i$).
+- $p_i$ is the predicted probability for class $i$, usually obtained from the Softmax function.
+
+### Purpose:
+- This loss function measures how well the model's predicted probabilities align with the true labels. It is used in classification tasks, especially when the output layer of the model uses the Softmax activation function.
+
 
 ### Divers
 
