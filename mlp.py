@@ -12,6 +12,15 @@ def linear(x):
 def linear_derivative(x):
     return 1
 
+def sigmoid(x):
+    """Sigmoid activation function"""
+    return 1.0 / (1.0 + math.exp(-x)) if x > -700 else 0.0  # Prevent overflow
+
+def sigmoid_derivative(x):
+    """Derivative of sigmoid function"""
+    sigmoid_x = sigmoid(x)
+    return sigmoid_x * (1 - sigmoid_x)
+
 def softmax(logits):
 	# Here we need to avoid overflow, if logit is large exp(logit) will be to large
 	# We are only concerned with relativbe difference between logits
@@ -121,6 +130,9 @@ class Layer():
         elif activation_func == 'linear':
             self.activ_func = linear
             self.activ_func_deriv = linear_derivative
+        elif activation_func == 'sigmoid':
+            self.activ_func = sigmoid 
+            self.activ_func_deriv = sigmoid_derivative
         else:
             sys.exit(f"Unknown activation function {activation_func}")
     
