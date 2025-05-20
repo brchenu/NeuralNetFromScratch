@@ -1,5 +1,5 @@
 from mlp import MLP, cross_entropy_loss
-from mnist_parser import parse_images, parse_labels
+from dataset import MNIST
 
 def getChar(value):
     density_line = "@%#*+=-:. "
@@ -22,17 +22,15 @@ def to_list(label):
 def to_one_hot_encoding(labels: list):
     return [to_list(label) for label in labels]
 
-images = parse_images("dataset/training/train-images.idx3-ubyte")
-raw_labels = parse_labels("dataset/training/train-labels.idx1-ubyte")
-labels = to_one_hot_encoding(raw_labels)
+mnist = MNIST()
+mnist.load()
 
-test_images = parse_images("dataset/test/t10k-images.idx3-ubyte")
-raw_test_labels = parse_labels("dataset/test/t10k-labels.idx1-ubyte")
-test_labels = to_one_hot_encoding(raw_test_labels)
+labels = to_one_hot_encoding(mnist.labels)
+test_labels = to_one_hot_encoding(mnist.test_labels)
 
 # Normalize inputs
-images = [[pixel / 255.0 for pixel in img] for img in images]
-test_images = [[pixel / 255.0 for pixel in img] for img in test_images]
+images = [[pixel / 255.0 for pixel in img] for img in mnist.images]
+test_images = [[pixel / 255.0 for pixel in img] for img in mnist.test_images]
 
 sub_img = images[:20000]
 sub_label = labels[:20000]
