@@ -1,4 +1,5 @@
 import math
+import numpy as np
     
 def relu(x):
 	return max(0, x)
@@ -20,3 +21,8 @@ def sigmoid_derivative(x):
     """Derivative of sigmoid function"""
     sigmoid_x = sigmoid(x)
     return sigmoid_x * (1 - sigmoid_x)
+
+# Numpy optimized functions
+
+def np_relu(x):
+    return np.maximum(0, x)
