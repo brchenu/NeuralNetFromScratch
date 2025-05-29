@@ -146,7 +146,7 @@ class Layer():
         # Here we want ∂L/∂b = ∂L/∂z * ∂z/∂b  
         # were ∂z/∂b = 1, because derivative of: z = w*x + b, w.r.t b is equal to 1
         # i.e: ∂L/∂b = ∂L/∂z * 1 = ∂L/∂z
-        self.grad_b = self.grad_z[:] # copy of the entire list
+        self.grad_b = self.grad_z[:] # Shallow copy
 
         # Here we want ∂L/∂x = ∂L/∂z * ∂z/∂x
         # And ∂z/∂x = w, because derivative of: z = w*x + b, w.r.t x is equal to w

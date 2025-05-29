@@ -24,5 +24,10 @@ def sigmoid_derivative(x):
 
 # Numpy optimized functions
 
-def np_relu(x):
+def np_relu(x: np.ndarray):
     return np.maximum(0, x)
+
+def np_relu_derivate(x: np.ndarray):
+    # (x > 0) : convert to boolean Array
+    #  astype(int) : convert True to 1 and False to 0
+    return (x > 0).astype(int)
