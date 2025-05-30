@@ -29,13 +29,15 @@ def cross_entropy_loss(pred: np.ndarray, true: np.ndarray):
 
     gradients = y_pred - true  # MAYBE AVERAGE HERE LATTER ?
 
-    return -loss, gradients
+    return loss, gradients
 
 
 class MLP:
     def __init__(self, shape, activations):
+        assert (len(shape) - 1) == len(activations)
+
         self.layers = [
-            Layer(shape[i - 1], shape[i], activations[i - 1][0], activations[i - 1][1])
+            Layer(shape[i - 1], shape[i], activations[i - 1])
             for i in range(1, len(shape))
         ]
 
@@ -44,7 +46,7 @@ class MLP:
             inputs = l.forward(inputs)
         return inputs
 
-    def train(self, epochs, inputs, labels, batch_size, learning_rate):
+    def train(self, inputs, labels, epochs, batch_size, learning_rate):
         x_batches = np.array(
             [inputs[i : i + batch_size] for i in range(0, len(inputs), batch_size)]
         )
@@ -59,9 +61,6 @@ class MLP:
             y_shuffle = y_batches[perm]
 
             for x, y_true in zip(x_shuffle, y_shuffle):
-                for layer in self.layers:
-                    layer.reset_accumulated_gradients()
-
                 # 1. Forward pass
                 y_pred = self.forward(x)
 
@@ -81,7 +80,7 @@ class MLP:
 
 
 class Layer:
-    def __init__(self, nbin: int, nbneurons: int, activation, activation_deriv):
+    def __init__(self, nbin: int, nbneurons: int, activation):
         limit = 2 / math.sqrt(nbin)  # Kaiming He weights init
 
         self.weights = np.array(
@@ -91,8 +90,16 @@ class Layer:
             ]
         )
         self.bias = np.array([0.1 for _ in range(nbneurons)])
-        self.activation = activation
-        self.activation_derv = activation_deriv
+
+        match activation:
+            case "linear":
+                self.activation = linear
+                self.activation_derv = linear_derivative
+            case "relu":
+                self.activation = np_relu
+                self.activation_derv = np_relu_derivate
+            case _:
+                raise Exception(f"Unknown activaton function: {activation}")
 
     def forward(self, inputs: np.ndarray):
         self.x = inputs  # (batch_size, in_dim)
@@ -106,7 +113,6 @@ class Layer:
         # ∂L/∂z = ∂L/∂a * ∂a/∂z
         self.grad_z = grad * self.activation_derv(self.z)
 
-        print(f"self.grad_z T: {self.grad_z.T.shape} x {self.x.shape}")
         # ∂L/∂w = ∂L/∂z * ∂z/∂w
         self.grad_w = self.grad_z.T @ self.x  # (out_dim, in_dim)
 
