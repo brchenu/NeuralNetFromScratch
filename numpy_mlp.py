@@ -78,6 +78,15 @@ class MLP:
 
                 print(f"loss: {loss}")
 
+    def evaluate(self, inputs, labels):
+        pred = self.forward(inputs)
+        count = 0
+        for y_pred, y_true in zip(pred, labels):
+            if np.argmax(y_pred) == np.argmax(y_true):
+                count += 1
+
+        return (count * 100) / labels.shape[0] 
+
 
 class Layer:
     def __init__(self, nbin: int, nbneurons: int, activation):
