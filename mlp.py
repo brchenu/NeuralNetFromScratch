@@ -33,11 +33,11 @@ def cross_entropy_loss(logits, label):
 
 class MLP():
 
-    def __init__(self, layers_sizes, activations_func, loss_func):
+    def __init__(self, layers_sizes, activations_func):
         # minus 1 because layer_sizes[0] is the input layer (no activ func)
         assert((len(layers_sizes) - 1) == len(activations_func)) 
 
-        self.loss_func = loss_func
+        self.loss_func = cross_entropy_loss 
         self.layers = [Layer(layers_sizes[i], layers_sizes[i+1], activations_func[i]) for i in range(len(layers_sizes) - 1)]
 
     def train(self, inputs, labels, epochs, batch_size, learning_rate):
