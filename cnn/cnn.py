@@ -57,16 +57,22 @@ class MaxPool:
         return out
 
 
-class SoftmaxLayer():
+class SoftmaxLayer:
     def __init__(self, in_dim, out_dim):
-        self.weights = np.random.randn(in_dim, out_dim) # Maybe divide or init differently
+        self.weights = np.random.randn(
+            in_dim, out_dim
+        )  # Maybe divide or init differently
         self.biases = np.random.randn(out_dim)
 
-    def forward(self, input: np.ndarray):
-        max = np.max(input)
-        exp = np.exp(input - max)
+    def forward(self, x: np.ndarray):
+        x = x.flatten()
+        self.z = (x @ self.weights) + self.biases
 
-        return exp / np.sum(exp, axis=(1))
+        max = np.max(self.z)
+        exp = np.exp(self.z - max)  # Shift for numerical stability
+
+        return exp / np.sum(exp)
+
 
 mnist = MNIST()
 mnist.load()
@@ -76,6 +82,7 @@ train, labels = mnist.get_train_subset(1000, 1001)
 img = np.array(train[0]).reshape(28, 28)
 
 print(f"img: {img.shape} / {img.dtype}")
+
 
 def print_image(image):
     for row in image:
@@ -93,9 +100,13 @@ print_image(img)
 
 conv_layer = ConvLayer(num_kernel=8)
 pool_layer = MaxPool()
+softmax_layer = SoftmaxLayer(in_dim=13 * 13 * 8, out_dim=10)
 
-out = conv_layer.forward(img)
+out = conv_layer.forward(img)  # 28x28x1 -> 26x26x8
 print(f"output shape: {out.shape}")
 
-out = pool_layer.forward(out, psize=2)
+out = pool_layer.forward(out, psize=2)  # 26x26x8 -> 13x13x8
 print(f"pooled output shape: {out.shape}")
+
+out = softmax_layer.forward(out)  # 13x13x8 -> 10
+print(f"softmax output shape: {out.shape}")
