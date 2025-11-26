@@ -1,5 +1,21 @@
+import math
 import numpy as np
 from dataset import MNIST
+
+
+# --- Utility functions ---
+def print_image(image):
+    for row in image:
+        line = ""
+        for pixel in row:
+            if pixel > 0.5:
+                line += "@"
+            else:
+                line += "."
+        print(line)
+
+
+# --- End Utility functions ---
 
 
 def cross_entropy_loss(predicted: np.ndarray, actual: np.ndarray) -> float:
@@ -14,17 +30,18 @@ def cross_entropy_loss(predicted: np.ndarray, actual: np.ndarray) -> float:
 
 
 def iterate_regions(image: np.ndarray, ksize: int):
-    assert image.ndim in (2, 3)
-    rows, cols = image.shape
+    assert image.ndim == 3
 
-    print(f"{rows}x{cols}")
+    rows, cols, _ = image.shape
+    print(f"image shape: {image.shape}")
 
     for row in range(rows - ksize + 1):
         for col in range(cols - ksize + 1):
-            yield image[row : row + ksize, col : col + ksize], row, col
+            yield image[row : row + ksize, col : col + ksize, :], row, col
 
 
-class ConvLayer:
+# Convolutional Layer
+class Conv2d:
     def __init__(self, num_kernel: np.ndarray):
         self.kernel_size = 3
         self.num_kernel = num_kernel
@@ -35,6 +52,7 @@ class ConvLayer:
         )
 
     def forward(self, input: np.ndarray):
+        self.input = input
 
         out_w = input.shape[0] - self.kernel_size + 1
         out_h = input.shape[1] - self.kernel_size + 1
@@ -53,59 +71,72 @@ class ConvLayer:
         # grad shape: (out_w, out_h, num_kernel)
 
         # ∂k/∂L = ∂out/∂L * ∂k/∂out
-        dL_dK = np.zeros_like(self.kernel)
+        dK = np.zeros_like(self.kernel)
 
         # ∂X/∂L = ∂out/∂L * ∂X/∂out
         dX = np.zeros_like(self.input)
 
+        print(f"dX shape: {dX.shape}, grad shape: {grad.shape}")
+
         # Pad grad because its shape is smaller than input due to convolution
         padded_grad = np.pad(
             grad,
-            1,
             pad_width=((1, 1), (1, 1), (0, 0)),
             mode="constant",
             constant_values=0,
         )
 
         for iter, row, col in iterate_regions(self.input, self.kernel_size):
-            for j in range(self.num_kernel):
-                # ∂k/∂out = iter, becauase out = sum(iter * k), so derivative of iter * k w.r.t k is iter
-                # Since k as a impact on multiple out, we sum over all out positions
-                dL_dK[j] += (
-                    padded_grad[
-                        row : row + self.kernel_size, col : col + self.kernel_size, j
-                    ]
-                    * iter
-                )
+            dK += (
+                padded_grad[row : row + self.kernel_size, col : col + self.kernel_size]
+                * iter[:, :, np.newaxis]
+            )
 
-                # ∂out/∂X = k, because out = sum(iter * k), so derivative of iter * k w.r.t iter is k
-                # Since X is impacted by multiple kernel, we sum over all kernel applications
-                dX[row : row + self.kernel_size, col : col + self.kernel_size, j] += (
-                    padded_grad[row, col, j] * self.kernel[j]
-                )
+        # for iter, row, col in iterate_regions(self.input, self.kernel_size):
+        #     for j in range(self.num_kernel):
+        #         # ∂k/∂out = iter, becauase out = sum(iter * k), so derivative of iter * k w.r.t k is iter
+        #         # Since k as a impact on multiple input, we sum over all positions
+        #         dL_dK[j] += (
+        #             padded_grad[
+        #                 row : row + self.kernel_size, col : col + self.kernel_size, j
+        #             ]
+        #             * iter
+        #         )
+
+        #         # ∂x/∂out = k, because out = sum(iter * k), so derivative of iter * k w.r.t iter is k
+        #         # Since X is impacted by multiple kernel, we sum over all kernel applications
+        #         dX[row : row + self.kernel_size, col : col + self.kernel_size] += (
+        #             padded_grad[row, col, j] * self.kernel[j]
+        #         )
 
         # Update kernels
-        self.kernel -= learning_rate * dL_dK
+        self.kernel -= learning_rate * dK
 
         # Compute gradient w.r.t input if needed (not implemented here)
         return dX
 
 
+# Max Pooling Layer
 class MaxPool:
-    def forward(self, input: np.ndarray, psize: int):
+    def __init__(self, psize=2):
+        self.psize = psize
+
+    def forward(self, input: np.ndarray):
         # Improve: allow to define stride
         self.input = input
 
         height, width, num_img = input.shape
 
-        out = np.zeros((height // psize, width // psize, num_img), dtype=input.dtype)
+        out = np.zeros(
+            (height // self.psize, width // self.psize, num_img), dtype=input.dtype
+        )
 
         # Corresponds to the positions of max values in the input
         self.mask_max = np.zeros_like(input, dtype=bool)
 
-        for row in range(0, height, psize):
-            for col in range(0, width, psize):
-                pool = input[row : row + psize, col : col + psize, :]
+        for row in range(0, height, self.psize):
+            for col in range(0, width, self.psize):
+                pool = input[row : row + self.psize, col : col + self.psize, :]
 
                 # --- Keep track of max indices (FOR BACKPROP) ---
                 reshaped_pool = pool.reshape(
@@ -125,40 +156,40 @@ class MaxPool:
                     )
                 # -----------------------------------------------
 
-                if pool.shape[0] < psize or pool.shape[1] < psize:
+                if pool.shape[0] < self.psize or pool.shape[1] < self.psize:
                     # If you can't fill the pool, skip it
                     continue
-                out[row // psize, col // psize] = np.max(pool, axis=(0, 1))
+                out[row // self.psize, col // self.psize] = np.max(pool, axis=(0, 1))
         return out
 
-    def backward(self, grad, learning_rate):
+    #  Dummy parameters for compatibility with other layers
+    def backward(self, grad, _):
         # Important to note MaxPool has no learnable parameters,
         # so learning_rate and gradient accumulation are not used here
-        print(f"grad shape: {grad.shape}")
-        print(f"input shape: {self.input.shape}")
-        print(f"mask_max shape: {self.mask_max.shape}")
-
         dX = np.zeros_like(self.input)
-        grad_upsampled = grad.repeat(2, axis=0).repeat(2, axis=1)
-        print(f"grad_upsampled shape: {grad_upsampled.shape}")
+        grad_upsampled = grad.repeat(self.psize, axis=0).repeat(self.psize, axis=1)
 
         dX[self.mask_max] = grad_upsampled[self.mask_max]
+
+        print(f"dX --> shape: {dX.shape}")
 
         return dX
 
 
-class SoftmaxLayer:
+# Softmax layer combined with Cross-Entropy Loss
+class Softmax:
     def __init__(self, in_dim, out_dim):
-        self.weights = np.random.randn(
-            in_dim, out_dim
-        )
+        self.weights = np.random.randn(in_dim, out_dim)
         self.biases = np.random.randn(out_dim)
 
     def forward(self, x: np.ndarray):
         self.x = x
+
+        # Classic fully connected layer
         x = x.flatten()
         self.z = (x @ self.weights) + self.biases
 
+        # Apply softmax
         max = np.max(self.z)
         exp = np.exp(self.z - max)  # Shift for numerical stability
 
@@ -198,72 +229,60 @@ class CNN:
             grad = layer.backward(grad, self.learning_rate)
         return grad
 
+    def train(self, inputs, labels, epochs, batch_size):
+        assert len(inputs) == len(labels)
+
+        for epoch in range(epochs):
+            # Shuffle inputs between epoch to avoid different learning issues
+            combined = list(zip(inputs, labels))
+            np.random.shuffle(combined)
+            shuffle_inputs, shuffle_labels = zip(*combined)
+
+            for i in range(0, len(inputs), batch_size):
+                batch_input = shuffle_inputs[i : i + batch_size]
+                batch_label = shuffle_labels[i : i + batch_size]
+
+                total_loss = 0.0
+                for input, label in zip(batch_input, batch_label):
+                    # 1. Forward pass
+                    activation = input
+                    for layer in self.layers:
+                        activation = layer.forward(activation)
+
+                    # 2. Compute Loss
+                    loss, gradients = cross_entropy_loss(activation, label)
+                    total_loss += loss
+
+                    # 3. Back propagation
+                    self.backward(gradients)
+
+                total_loss /= len(batch_input)
+                print(
+                    f"Epoch {epoch+1}/{epochs} - Batch {i/batch_size + 1}/{math.ceil(len(inputs)/batch_size)} -> Loss: {total_loss:.4f}"
+                )
+
 
 # mnist = MNIST()
 # mnist.load()
 
-# train, labels = mnist.get_train_subset(1000, 1001)
-
-# img = np.array(train[0]).reshape(28, 28)
-
-# print(f"img: {img.shape} / {img.dtype}")
-
-
-# def print_image(image):
-#     for row in image:
-#         line = ""
-#         for pixel in row:
-#             if pixel > 0.5:
-#                 line += "@"
-#             else:
-#                 line += "."
-#         print(line)
-
-
-# print(f"label: {labels[0]}")
-# print_image(img)
-
-# conv_layer = ConvLayer(num_kernel=8)
-# pool_layer = MaxPool()
-# softmax_layer = SoftmaxLayer(in_dim=13 * 13 * 8, out_dim=10)
-
-# out = conv_layer.forward(img)  # 28x28x1 -> 26x26x8
-# print(f"output shape: {out.shape}")
-
-# out = pool_layer.forward(out, psize=2)  # 26x26x8 -> 13x13x8
-# print(f"pooled output shape: {out.shape}")
-
-# out = softmax_layer.forward(out)  # 13x13x8 -> 10
-# print(f"softmax output shape: {out.shape}")
-# print(f"output: {out}")
-
-# loss, grad = cross_entropy_loss(out, labels[0])
-
-# grad = softmax_layer.backward(grad, learning_rate=0.01)
-
-# pool_layer.backward(grad, learning_rate=0.01)
 
 # # Conv flow: 28x28x1 -> [Conv(3x3,8)] -> 26x26x8 -> [MaxPool(2x2)] -> 13x13x8 -> [Softmax] -> 10
 
-a = np.array(
-    [
-        [1, 2, 3],
-        [
-            4,
-            5,
-            6,
-        ],
-        [7, 8, 9],
-    ]
-)
+# cnn = CNN(
+#     layers=[Conv2d(num_kernel=8), MaxPool(), Softmax(in_dim=13 * 13 * 8, out_dim=10)],
+#     learning_rate=0.01,
+# )
 
-b = np.repeat(a[:, :, np.newaxis], 2, axis=2)
+# train, labels = mnist.get_train_subset(1000, 1200)
 
-print(b.shape)
-# print(b)
+# train = [np.array(img).reshape(28, 28) for img in train]
+# labels = [np.array(label) for label in labels]
 
-print(
-    np.pad(
-        b, pad_width=((1, 1), (1, 1), (0, 0)), mode="constant", constant_values=0
-    ).shape
-)
+# cnn.train(train, labels, epochs=3, batch_size=32)
+
+a = np.array([[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3]])
+b = np.repeat(a[:, :, np.newaxis], 8, axis=2)
+print(f"a shape: {a.shape}")
+
+for iter, row, col in iterate_regions(a[:,:,np.newaxis], 3):
+    print(f"iter shape: {iter.shape}, row: {row}, col: {col}")
