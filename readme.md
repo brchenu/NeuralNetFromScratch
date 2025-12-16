@@ -238,6 +238,15 @@ $$
 f'(x) = \frac{df}{dx} = \lim_{h  \to 0} \frac{f(x + h) - f(x)}{h}
 $$
 
+### Partial Derivate
+
+Measure how a multi-variable function changes when one specific input changes, keeping all other inputs constant.
+
+For $$ f(x_1, x_2, ..., x_n)$$
+
+So  $ \frac{\partial f}{\partial x1} $, tells use how much $f$ changes if $x_1$ changes a little, with all other $x_i$ fixed.
+
+
 #### Geometric intuition
 
 The derivative of a function at some input is equal to the slope of the tangent line at that point.
