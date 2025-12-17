@@ -1,6 +1,7 @@
 import numpy as np
 import math
 from typing import Tuple
+from dataset import MNIST
 
 
 def he_init(shape: Tuple[int, ...], fan_in: int) -> np.ndarray:
@@ -40,11 +41,19 @@ def iterate_regions(input: np.ndarray, ksize: int, stride: int = 1):
 
 
 class Conv2d:
-    def __init__(self, cin: int, cout: int, ksize: int, stride: int = 1):
+    def __init__(
+        self,
+        cin: int,
+        cout: int,
+        ksize: int,
+        stride: int = 1,
+        learning_rate: float = 0.001,
+    ):
         self.cin = cin
         self.cout = cout
         self.ksize = ksize
         self.stride = stride
+        self.learning_rate = learning_rate
 
         # He initialization: optimal for ReLU activations
         # fan_in = number of inputs to each neuron = cin * ksize * ksize
@@ -68,12 +77,12 @@ class Conv2d:
 
         for patch, row, col in iterate_regions(input, self.ksize, self.stride):
             out[row // self.stride, col // self.stride, :] = np.tensordot(
-                patch, self.kernels, axes=([0, 1, 2], [1, 2, 3])
+                patch, self.kernels, axes=([0, 1, 2], [2, 3, 1])
             )
 
         return out
 
-    def backward(self, grad: np.ndarray, learning_rate: float = 0.001):
+    def backward(self, grad: np.ndarray):
         # grad shape: (out_rows, out_cols, cout)
 
         dK = np.zeros_like(self.kernels)
@@ -97,15 +106,15 @@ class Conv2d:
                 )
 
         # Update kernels
-        self.kernels -= learning_rate * dK
+        self.kernels -= self.learning_rate * dK
 
         return dX
 
 
 class MaxPool2d:
-    def __init__(self, size: int, stride: int):
+    def __init__(self, size: int, stride: int = None):
         self.size = size
-        self.stride = stride
+        self.stride = stride if stride is not None else size
 
     def forward(self, input: np.ndarray):
         assert input.ndim == 3
@@ -160,9 +169,10 @@ class MaxPool2d:
 
 
 class SoftmaxCrossEntropyLayer:
-    def __init__(self, in_dim: int, out_dim: int):
+    def __init__(self, in_dim: int, out_dim: int, learning_rate: float = 0.001):
         self.w = np.random.randn(in_dim, out_dim) / math.sqrt(in_dim)
         self.b = np.zeros(out_dim)
+        self.learning_rate = learning_rate
 
     def forward(self, x: np.ndarray, y: np.ndarray) -> float:
         """
@@ -184,7 +194,7 @@ class SoftmaxCrossEntropyLayer:
         loss = -np.sum(self.y * np.log(self.probs + 1e-9))
         return loss
 
-    def backward(self, learning_rate: float = 0.001) -> np.ndarray:
+    def backward(self) -> np.ndarray:
         """
         returns: dX (gradient w.r.t input)
         """
@@ -195,8 +205,8 @@ class SoftmaxCrossEntropyLayer:
         self.dW = np.outer(self.x, dZ)  # (in_dim, out_dim)
         self.dB = dZ  # (out_dim,)
 
-        self.w -= learning_rate * self.dW
-        self.b -= learning_rate * self.dB
+        self.w -= self.learning_rate * self.dW
+        self.b -= self.learning_rate * self.dB
 
         # Input gradient
         dX = dZ @ self.w.T  # (in_dim,)
@@ -209,7 +219,7 @@ class ReLU:
         # Element-wise maximum between 0 and input
         return np.maximum(0, input)
 
-    def backward(self, grad: np.ndarray, learning_rate):
+    def backward(self, grad: np.ndarray):
         # ReLU has no learnable parameters, so we don't use learning_rate
 
         # Derivative of ReLU:
@@ -221,5 +231,36 @@ class ReLU:
         return grad * relu_grad
 
 
-a = np.full((16, 8, 3, 3), 1)
-print(np.sum(a, axis=0))
+class CNN:
+    def __init__(self, layers):
+        self.layers = layers
+
+    def forward(self, x: np.ndarray):
+        for layer in self.layers:
+            x = layer.forward(x)
+        return x
+
+    def backward(self, grad: np.ndarray):
+        for layer in reversed(self.layers):
+            grad = layer.backward(grad)
+        return grad
+
+
+mnist = MNIST()
+mnist.load()
+
+train_data, train_labels = mnist.get_train_subset(0, 5)
+
+layers = [
+    Conv2d(cin=1, cout=8, ksize=3, stride=1, learning_rate=0.001),
+    ReLU(),
+    MaxPool2d(size=2, stride=2),
+    Conv2d(cin=8, cout=16, ksize=3, stride=1, learning_rate=0.001),
+    ReLU(),
+    MaxPool2d(size=2),
+    SoftmaxCrossEntropyLayer(in_dim=16 * 5 * 5, out_dim=10, learning_rate=0.001),
+]
+
+cnn = CNN(layers=layers)
+loss = cnn.forward(np.array(train_data[0]).reshape(28, 28, 1))
+print("Initial loss:", loss)
