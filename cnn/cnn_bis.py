@@ -247,6 +247,7 @@ class CNN:
         return x
 
     def backward(self, grad: np.ndarray):
+
         for layer in reversed(self.layers):
             grad = layer.backward(grad)
         return grad
@@ -255,7 +256,7 @@ class CNN:
 mnist = MNIST()
 mnist.load()
 
-train_data, train_labels = mnist.get_train_subset(0, 5)
+train_data, train_labels = mnist.get_train_subset(0, 1_000)
 
 layers = [
     Conv2d(cin=1, cout=8, ksize=3, stride=1, learning_rate=0.001),
@@ -269,9 +270,28 @@ layers = [
 ]
 
 cnn = CNN(layers=layers)
+loss_func = SoftmaxCrossEntropy()
 
-logits = cnn.forward(np.array(train_data[0]).reshape(28, 28, 1))
-print(f"Logits: {logits}")
+for data, label in zip(train_data, train_labels):
+    data_shaped = np.array(data).reshape(28, 28, 1)
 
-loss = SoftmaxCrossEntropy().forward(logits, train_labels[0])
-print(f"Loss: {loss}")
+    logits = cnn.forward(data_shaped)
+    loss = loss_func.forward(logits, label)
+
+    print(f"Loss: {loss}")
+
+    grad = loss_func.backward()
+    cnn.backward(grad)
+
+test_data, test_labels = mnist.get_test_subset(0, 100)
+
+score = 0
+for data, label in zip(test_data, test_labels):
+    data_shaped = np.array(data).reshape(28, 28, 1)
+    logits = cnn.forward(data_shaped)
+    predicted = np.argmax(logits)
+
+    if predicted == np.argmax(label):
+        score += 1
+
+print(f"Test accuracy: {score} / 10")
