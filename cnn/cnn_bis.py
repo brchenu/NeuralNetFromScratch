@@ -168,49 +168,18 @@ class MaxPool2d:
         return dX
 
 
-class SoftmaxCrossEntropyLayer:
-    def __init__(self, in_dim: int, out_dim: int, learning_rate: float = 0.001):
-        self.w = np.random.randn(in_dim, out_dim) / math.sqrt(in_dim)
-        self.b = np.zeros(out_dim)
-        self.learning_rate = learning_rate
-
-    def forward(self, x: np.ndarray, y: np.ndarray) -> float:
-        """
-        x: (in_dim,)
-        y: (out_dim,) one-hot
-        returns: scalar loss
-        """
-        self.x = x.flatten()
+class SoftmaxCrossEntropy:
+    def forward(self, logits, y):
         self.y = y
-
-        # Linear
-        self.z = self.x @ self.w + self.b
-
-        # Softmax (stable)
-        exp = np.exp(self.z - np.max(self.z))
+        # subtract max for numerical stability
+        exp = np.exp(logits - np.max(logits))
         self.probs = exp / np.sum(exp)
 
-        # Cross-entropy loss
-        loss = -np.sum(self.y * np.log(self.probs + 1e-9))
-        return loss
+        # Add small constant to avoid log(0)
+        return -np.sum(y * np.log(self.probs + 1e-9))
 
-    def backward(self) -> np.ndarray:
-        """
-        returns: dX (gradient w.r.t input)
-        """
-        # Combined gradient
-        dZ = self.probs - self.y  # (out_dim,)
-
-        # Parameter gradients
-        self.dW = np.outer(self.x, dZ)  # (in_dim, out_dim)
-        self.dB = dZ  # (out_dim,)
-
-        self.w -= self.learning_rate * self.dW
-        self.b -= self.learning_rate * self.dB
-
-        # Input gradient
-        dX = dZ @ self.w.T  # (in_dim,)
-        return dX
+    def backward(self):
+        return self.probs - self.y  # Returns initial gradient
 
 
 class ReLU:
@@ -229,6 +198,43 @@ class ReLU:
 
         # Chain rule: multiply incoming gradient by local gradient
         return grad * relu_grad
+
+
+class Flatten:
+    def forward(self, input: np.ndarray):
+        self.input_shape = input.shape
+        return input.flatten()
+
+    def backward(self, grad: np.ndarray):
+        return grad.reshape(self.input_shape)
+
+
+class Linear:
+    def __init__(self, fan_in, fan_out, learning_rate=0.001):
+        self.w = np.random.randn(fan_in, fan_out) / np.sqrt(fan_in)  # Xavier init
+        self.b = np.zeros(fan_out)
+        self.learning_rate = learning_rate
+
+    def forward(self, x):
+        # x shape: (fan_in,)
+        self.x = x
+        # output shape: (fan_out,)
+        return x @ self.w + self.b
+
+    def backward(self, grad):
+        # grad shape: (fan_out,)
+
+        self.dW = np.outer(
+            self.x, grad
+        )  # (fan_in,) outer (fan_out,) = (fan_in, fan_out)
+        self.dB = grad  # (fan_out,)
+
+        # Update weights
+        self.w -= self.learning_rate * self.dW
+        self.b -= self.learning_rate * self.dB
+
+        # dX shape: (fan_in,) - gradient for previous layer
+        return grad @ self.w.T  # (fan_out,) @ (fan_out, fan_in) = (fan_in,)
 
 
 class CNN:
@@ -258,9 +264,14 @@ layers = [
     Conv2d(cin=8, cout=16, ksize=3, stride=1, learning_rate=0.001),
     ReLU(),
     MaxPool2d(size=2),
-    SoftmaxCrossEntropyLayer(in_dim=16 * 5 * 5, out_dim=10, learning_rate=0.001),
+    Flatten(),
+    Linear(fan_in=16 * 5 * 5, fan_out=10, learning_rate=0.001),
 ]
 
 cnn = CNN(layers=layers)
-loss = cnn.forward(np.array(train_data[0]).reshape(28, 28, 1))
-print("Initial loss:", loss)
+
+logits = cnn.forward(np.array(train_data[0]).reshape(28, 28, 1))
+print(f"Logits: {logits}")
+
+loss = SoftmaxCrossEntropy().forward(logits, train_labels[0])
+print(f"Loss: {loss}")
