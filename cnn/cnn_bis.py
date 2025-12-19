@@ -29,7 +29,7 @@ def iterate_regions(input: np.ndarray, ksize: int, stride: int = 1):
     Yields: (patch, row, col) where row/col are the *top-left* input indices.
     """
 
-    assert input.ndim == 3
+    assert input.ndim in (3, 4)
     assert ksize > 0 and stride > 0
 
     rows, cols, _ = input.shape
@@ -55,58 +55,92 @@ class Conv2d:
         self.stride = stride
         self.learning_rate = learning_rate
 
-        # He initialization: optimal for ReLU activations
-        # fan_in = number of inputs to each neuron = cin * ksize * ksize
         fan_in = cin * ksize * ksize
         self.kernels = he_init((cout, cin, ksize, ksize), fan_in)
 
     def forward(self, input: np.ndarray):
-        assert input.ndim == 3
+        # input shape: (batch, height, width, channels)
+        assert input.ndim == 4
 
         self.input = input
+        batch_size, rows, cols, _ = input.shape
 
-        rows, cols, _ = input.shape
+        out_h = (rows - self.ksize) // self.stride + 1
+        out_w = (cols - self.ksize) // self.stride + 1
 
-        out = np.zeros(
-            (
-                (rows - self.ksize) // self.stride + 1,
-                (cols - self.ksize) // self.stride + 1,
-                self.cout,
-            )
-        )
+        # Use im2col for efficient batched convolution
+        # Extract all patches at once
+        self.col = self._im2col(input)  # (batch, out_h*out_w, cin*ksize*ksize)
 
-        for patch, row, col in iterate_regions(input, self.ksize, self.stride):
-            out[row // self.stride, col // self.stride, :] = np.tensordot(
-                patch, self.kernels, axes=([0, 1, 2], [2, 3, 1])
-            )
+        # Reshape kernels for matrix multiplication
+        kernels_flat = self.kernels.reshape(self.cout, -1)  # (cout, cin*ksize*ksize)
+
+        # Batch matrix multiplication
+        out = self.col @ kernels_flat.T  # (batch, out_h*out_w, cout)
+        out = out.reshape(batch_size, out_h, out_w, self.cout)
 
         return out
 
-    def backward(self, grad: np.ndarray):
-        # grad shape: (out_rows, out_cols, cout)
+    def _im2col(self, input):
+        """Extract patches as columns for efficient convolution"""
+        batch_size, rows, cols, cin = input.shape
+        out_h = (rows - self.ksize) // self.stride + 1
+        out_w = (cols - self.ksize) // self.stride + 1
 
-        dK = np.zeros_like(self.kernels)
+        col = np.zeros((batch_size, out_h * out_w, cin * self.ksize * self.ksize))
+
+        for i, row in enumerate(range(0, rows - self.ksize + 1, self.stride)):
+            for j, col_idx in enumerate(range(0, cols - self.ksize + 1, self.stride)):
+                patch = input[
+                    :, row : row + self.ksize, col_idx : col_idx + self.ksize, :
+                ]
+                col[:, i * out_w + j, :] = patch.reshape(batch_size, -1)
+
+        return col
+
+    def backward(self, grad: np.ndarray):
+        # grad shape: (batch, out_h, out_w, cout)
+        batch_size = grad.shape[0]
+
+        # Reshape grad for matrix operations
+        grad_flat = grad.reshape(
+            batch_size, -1, self.cout
+        )  # (batch, out_h*out_w, cout)
+
+        # Gradient for kernels: sum over batch
+        # dK = col.T @ grad for each sample, then sum
+        dK_flat = np.tensordot(
+            self.col, grad_flat, axes=([0, 1], [0, 1])
+        )  # (cin*k*k, cout)
+        self.dK = dK_flat.T.reshape(self.kernels.shape) / batch_size
+
+        # Gradient for input
+        kernels_flat = self.kernels.reshape(self.cout, -1)  # (cout, cin*k*k)
+        dcol = grad_flat @ kernels_flat  # (batch, out_h*out_w, cin*k*k)
+
+        dX = self._col2im(dcol)
+
+        # Update
+        self.kernels -= self.learning_rate * self.dK
+
+        return dX
+
+    def _col2im(self, col):
+        """Convert columns back to image (reverse of im2col)"""
+        batch_size, _, rows, cols = self.input.shape
+        out_h = (rows - self.ksize) // self.stride + 1
+        out_w = (cols - self.ksize) // self.stride + 1
+
         dX = np.zeros_like(self.input)
 
-        for patch, row, col in iterate_regions(self.input, self.ksize, self.stride):
-            out_row = row // self.stride
-            out_col = col // self.stride
-
-            for k in range(self.cout):
-                # dK[k] shape: (cin, ksize, ksize)
-                # patch shape: (ksize, ksize, cin)
-                # So we need to transpose patch to (cin, ksize, ksize)
-                dK[k] += grad[out_row, out_col, k] * patch.transpose(2, 0, 1)
-
-                # dX shape : (in_rows, in_cols, cin)
-                # kernels[k] shape: (cin, ksize, ksize)
-                # So we need to add to the corresponding region in dX
-                dX[row : row + self.ksize, col : col + self.ksize, :] += (
-                    self.kernels[k].transpose(1, 2, 0) * grad[out_row, out_col, k]
+        for i, row in enumerate(range(0, rows - self.ksize + 1, self.stride)):
+            for j, col_idx in enumerate(range(0, cols - self.ksize + 1, self.stride)):
+                patch = col[:, i * out_w + j, :].reshape(
+                    batch_size, self.ksize, self.ksize, self.cin
                 )
-
-        # Update kernels
-        self.kernels -= self.learning_rate * dK
+                dX[
+                    :, row : row + self.ksize, col_idx : col_idx + self.ksize, :
+                ] += patch
 
         return dX
 
@@ -117,69 +151,69 @@ class MaxPool2d:
         self.stride = stride if stride is not None else size
 
     def forward(self, input: np.ndarray):
-        assert input.ndim == 3
+        # input shape: (batch, height, width, channels)
+        assert input.ndim == 4
 
         self.input = input
+        batch_size, rows, cols, channels = input.shape
 
-        rows, cols, channels = input.shape
-        out = np.zeros(
-            (
-                (rows - self.size) // self.stride + 1,
-                (cols - self.size) // self.stride + 1,
-                channels,
-            )
-        )
+        out_h = (rows - self.size) // self.stride + 1
+        out_w = (cols - self.size) // self.stride + 1
 
-        self.max_indices = {}
+        out = np.zeros((batch_size, out_h, out_w, channels))
+        self.max_indices = np.zeros((batch_size, out_h, out_w, channels), dtype=int)
 
-        # Iterate over all channels at once
-        for patch, row, col in iterate_regions(input, self.size, self.stride):
+        for i, row in enumerate(range(0, rows - self.size + 1, self.stride)):
+            for j, col in enumerate(range(0, cols - self.size + 1, self.stride)):
+                patch = input[:, row : row + self.size, col : col + self.size, :]
+                patch_flat = patch.reshape(batch_size, -1, channels)
 
-            # Flatten because for argmax
-            flat_patch = patch.reshape(-1, patch.shape[2])
-            idx = np.argmax(flat_patch, axis=0)
+                idx = np.argmax(patch_flat, axis=1)  # (batch, channels)
+                self.max_indices[:, i, j, :] = idx
 
-            # Keep track of max indices for backward pass
-            self.max_indices[(row, col)] = idx
-
-            max_vals = flat_patch[idx, np.arange(flat_patch.shape[1])]
-            out[row // self.stride, col // self.stride, :] = max_vals
+                out[:, i, j, :] = np.take_along_axis(
+                    patch_flat, idx[:, np.newaxis, :], axis=1
+                ).squeeze(1)
 
         return out
 
     def backward(self, grad: np.ndarray):
-        # grad shape: (out_rows, out_cols, channels)
-
+        # grad shape: (batch, out_h, out_w, channels)
+        batch_size, out_h, out_w, channels = grad.shape
         dX = np.zeros_like(self.input)
+        rows = self.input.shape[1]
+        cols = self.input.shape[2]
 
-        for (row, col), idx in self.max_indices.items():
-            # Convert flat index back to 2D index within the patch
-            unraveled_idx = np.unravel_index(idx, (self.size, self.size))
+        for i, row in enumerate(range(0, rows - self.size + 1, self.stride)):
+            for j, col in enumerate(range(0, cols - self.size + 1, self.stride)):
+                idx = self.max_indices[:, i, j, :]  # (batch, channels)
+                idx_row, idx_col = np.unravel_index(idx, (self.size, self.size))
 
-            for channel in range(grad.shape[2]):
-                dX[
-                    # [0][channel] because unraveled_idx is a tuple of arrays
-                    # where each array corresponds to a channel
-                    row + unraveled_idx[0][channel],
-                    col + unraveled_idx[1][channel],
-                    channel,
-                ] += grad[row // self.stride, col // self.stride, channel]
+                for b in range(batch_size):
+                    for c in range(channels):
+                        dX[b, row + idx_row[b, c], col + idx_col[b, c], c] += grad[
+                            b, i, j, c
+                        ]
 
         return dX
 
 
 class SoftmaxCrossEntropy:
     def forward(self, logits, y):
+        # logits: (batch, num_classes)
         self.y = y
-        # subtract max for numerical stability
-        exp = np.exp(logits - np.max(logits))
-        self.probs = exp / np.sum(exp)
+        
+        # Subtract max for numerical stability
+        exp = np.exp(logits - np.max(logits, axis=1, keepdims=True))
+        
+        self.probs = exp / np.sum(exp, axis=1, keepdims=True)
 
-        # Add small constant to avoid log(0)
-        return -np.sum(y * np.log(self.probs + 1e-9))
+        # Average loss over batch
+        return -np.mean(np.sum(y * np.log(self.probs + 1e-9), axis=1))
 
     def backward(self):
-        return self.probs - self.y  # Returns initial gradient
+        # Don't divide here - let layers handle averaging
+        return (self.probs - self.y)  # ← Remove division!
 
 
 class ReLU:
@@ -203,7 +237,7 @@ class ReLU:
 class Flatten:
     def forward(self, input: np.ndarray):
         self.input_shape = input.shape
-        return input.flatten()
+        return input.reshape(self.input_shape[0], -1)
 
     def backward(self, grad: np.ndarray):
         return grad.reshape(self.input_shape)
@@ -211,30 +245,26 @@ class Flatten:
 
 class Linear:
     def __init__(self, fan_in, fan_out, learning_rate=0.001):
-        self.w = np.random.randn(fan_in, fan_out) / np.sqrt(fan_in)  # Xavier init
+        self.w = np.random.randn(fan_in, fan_out) / np.sqrt(fan_in)
         self.b = np.zeros(fan_out)
         self.learning_rate = learning_rate
 
     def forward(self, x):
-        # x shape: (fan_in,)
+        # x shape: (batch, fan_in)
         self.x = x
-        # output shape: (fan_out,)
-        return x @ self.w + self.b
+        return x @ self.w + self.b  # (batch, fan_out)
 
     def backward(self, grad):
-        # grad shape: (fan_out,)
+        # grad shape: (batch, fan_out)
 
-        self.dW = np.outer(
-            self.x, grad
-        )  # (fan_in,) outer (fan_out,) = (fan_in, fan_out)
-        self.dB = grad  # (fan_out,)
+        # Average gradients over batch
+        self.dW = self.x.T @ grad / grad.shape[0]  # (fan_in, fan_out)
+        self.dB = np.mean(grad, axis=0)  # (fan_out,)
 
-        # Update weights
         self.w -= self.learning_rate * self.dW
         self.b -= self.learning_rate * self.dB
 
-        # dX shape: (fan_in,) - gradient for previous layer
-        return grad @ self.w.T  # (fan_out,) @ (fan_out, fan_in) = (fan_in,)
+        return grad @ self.w.T  # (batch, fan_in)
 
 
 class CNN:
@@ -256,42 +286,68 @@ class CNN:
 mnist = MNIST()
 mnist.load()
 
-train_data, train_labels = mnist.get_train_subset(0, 1_000)
+
+def create_batches(data, labels, batch_size):
+    indices = np.random.permutation(len(data))
+    for i in range(0, len(data), batch_size):
+        batch_idx = indices[i : i + batch_size]
+        yield np.array([data[j] for j in batch_idx]), np.array(
+            [labels[j] for j in batch_idx]
+        )
+
 
 layers = [
-    Conv2d(cin=1, cout=8, ksize=3, stride=1, learning_rate=0.001),
+    Conv2d(cin=1, cout=8, ksize=3, stride=1, learning_rate=0.01),
     ReLU(),
     MaxPool2d(size=2, stride=2),
-    Conv2d(cin=8, cout=16, ksize=3, stride=1, learning_rate=0.001),
+    Conv2d(cin=8, cout=16, ksize=3, stride=1, learning_rate=0.01),
     ReLU(),
     MaxPool2d(size=2),
     Flatten(),
-    Linear(fan_in=16 * 5 * 5, fan_out=10, learning_rate=0.001),
+    Linear(fan_in=16 * 5 * 5, fan_out=10, learning_rate=0.01),
 ]
 
 cnn = CNN(layers=layers)
 loss_func = SoftmaxCrossEntropy()
 
-for data, label in zip(train_data, train_labels):
-    data_shaped = np.array(data).reshape(28, 28, 1)
+TRAIN_SIZE = 10_000
+BATCH_SIZE = 32
+EPOCHS = 5
 
-    logits = cnn.forward(data_shaped)
-    loss = loss_func.forward(logits, label)
+train_data, train_labels = mnist.get_train_subset(0, TRAIN_SIZE)
 
-    print(f"Loss: {loss}")
+for epoch in range(EPOCHS):
+    total_loss = 0.0
+    num_batches = 0
 
-    grad = loss_func.backward()
-    cnn.backward(grad)
+    for batch_data, batch_labels in create_batches(
+        train_data, train_labels, BATCH_SIZE
+    ):
+        data_shaped = np.array(batch_data).reshape(-1, 28, 28, 1) / 255.0
 
-test_data, test_labels = mnist.get_test_subset(0, 100)
+        logits = cnn.forward(data_shaped)
+        loss = loss_func.forward(logits, batch_labels)
+        total_loss += loss
+        num_batches += 1
 
-score = 0
-for data, label in zip(test_data, test_labels):
-    data_shaped = np.array(data).reshape(28, 28, 1)
-    logits = cnn.forward(data_shaped)
-    predicted = np.argmax(logits)
+        grad = loss_func.backward()
+        cnn.backward(grad)
 
-    if predicted == np.argmax(label):
-        score += 1
+    print(f"Epoch {epoch + 1}/{EPOCHS}, Avg Loss: {total_loss / num_batches:.4f}")
 
-print(f"Test accuracy: {score} / 10")
+# Testing
+test_data, test_labels = mnist.get_test_subset(0, 1000)
+
+# Test in batches too
+correct = 0
+total = 0
+
+for batch_data, batch_labels in create_batches(test_data, test_labels, BATCH_SIZE):
+    batch_shaped = np.array(batch_data).reshape(-1, 28, 28, 1) / 255.0
+    logits = cnn.forward(batch_shaped)
+    predictions = np.argmax(logits, axis=1)
+    targets = np.argmax(batch_labels, axis=1)
+    correct += np.sum(predictions == targets)
+    total += len(batch_labels)
+
+print(f"Test accuracy: {correct}/{total} = {100 * correct / total:.2f}%")
